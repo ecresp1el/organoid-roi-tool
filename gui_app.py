@@ -88,6 +88,40 @@ def load_image_any(path: Path):
                 print(f'[gui] Pillow fallback failed: {e2}')
                 raise
         raise
+
+def upsert_row(csv_path: Path, row: dict, key="image_path"):
+    """Append or update a single row keyed by `key` (default: image_path).
+    Ensures exactly one row per image in the CSV.
+    """
+    cols = ["image_path", "well", "day", "time", "area_px", "perimeter_px", "centroid_yx", "pixel_size_um"]
+    try:
+        if csv_path.exists():
+            df = pd.read_csv(csv_path)
+            # Drop any existing rows with the same key
+            if key in df.columns:
+                df = df[df[key] != row[key]]
+            # Ensure all columns exist; add missing ones
+            for c in cols:
+                if c not in df.columns:
+                    df[c] = "" if c in ("centroid_yx", "pixel_size_um") else None
+            # Reorder columns
+            df = df[[c for c in cols if c in df.columns]] if set(cols).issubset(df.columns) else df
+            # Append new row
+            df = pd.concat([df, pd.DataFrame([row], columns=cols)], ignore_index=True)
+        else:
+            df = pd.DataFrame([row], columns=cols)
+        df.to_csv(csv_path, index=False)
+    except Exception as e:
+        print(f"[gui] upsert_row failed for {csv_path}: {e}")
+        # Fallback: write a minimal CSV to avoid blocking UX
+        try:
+            with csv_path.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=cols)
+                w.writeheader()
+                w.writerow(row)
+        except Exception as e2:
+            print(f"[gui] fallback CSV write failed for {csv_path}: {e2}")
+
 class OrganoidROIApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -163,7 +197,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.shapes = self.viewer.add_shapes(name='ROI', shape_type='polygon')
         print(f'[gui] Image layer added via {backend}: shape={img.shape}, CL=({low:.2f},{high:.2f})')
         self.current_dir = path.parent
-        self.file_list = sorted([p for p in self.current_dir.glob('*.tif')])
+        self.file_list = sorted(list(self.current_dir.glob('*.tif')) + list(self.current_dir.glob('*.tiff')))
         try: self.file_index = self.file_list.index(path)
         except ValueError: self.file_index = 0
         self.setWindowTitle(f'Organoid ROI Tool — {path.name}')
@@ -209,15 +243,14 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         row = {'image_path': str((img_dir / current_name).resolve()), 'well': well, 'day': day, 'time': time_,
                'area_px': res.area_px, 'perimeter_px': res.perimeter_px, 'centroid_yx': json.dumps(res.centroid_yx),
                'pixel_size_um': px_um if px_um is not None else ''}
-        def append_csv(csv_path: Path):
-            write_header = not csv_path.exists()
-            with csv_path.open('a', newline='') as f:
-                w = csv.DictWriter(f, fieldnames=list(row.keys()))
-                if write_header: w.writeheader()
-                w.writerow(row)
-            print(f'[gui] Appended measurements to {csv_path}')
-        append_csv(img_dir / 'roi_measurements.csv')
-        if proj_root: append_csv(proj_root / 'roi_measurements.csv')
+        # Upsert (one row per image) into local and project-level CSVs
+        local_csv = img_dir / 'roi_measurements.csv'
+        upsert_row(local_csv, row)
+        print(f'[gui] Upserted measurements into {local_csv}')
+        if proj_root:
+            proj_csv = proj_root / 'roi_measurements.csv'
+            upsert_row(proj_csv, row)
+            print(f'[gui] Upserted measurements into {proj_csv}')
         QtWidgets.QMessageBox.information(self, 'Saved', f'ROI saved:\n{roi_json.name}\n{mask_tif.name}\nMeasurements appended.')
 def main():
     print('[gui] Launching Qt app...')
