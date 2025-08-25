@@ -108,7 +108,6 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
     btn_bar.addWidget(self.btn_save)
     btn_bar.addWidget(self.btn_delete)
     layout.addLayout(btn_bar)
-        layout.addLayout(btn_bar)
         self.viewer = napari.Viewer()
         self.viewer.window._qt_window.setWindowFlag(QtCore.Qt.Widget, True)
         layout.addWidget(self.viewer.window._qt_window)
