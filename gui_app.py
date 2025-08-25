@@ -228,12 +228,57 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         tiff.imwrite(str(mask_tif), res.mask.astype(np.uint8)*255)
         save_roi_json(str(roi_json), res.vertices_yx, str(img_dir / Path(current_name)))
         print(f'[gui] Saved: {mask_tif.name}, {roi_json.name}')
-        # Check that files were saved
         import time
         time.sleep(0.1)  # Small delay to ensure file system update
         if not (roi_json.exists() and mask_tif.exists()):
             QtWidgets.QMessageBox.critical(self, 'Save Failed', 'ROI or mask file was not saved correctly!')
             print('[gui] Save failed: file(s) missing.'); return
+        # === Save masked TIFFs (full-size + cropped) with associated alpha ===
+        # Keeps original pixel dtype. Outside-ROI pixels are NOT set to 0; they are marked "missing"
+        # via an associated alpha channel (EXTRASAMPLES=ASSOCALPHA). Many tools (Napari, ImageJ)
+        # will honor this as transparency/mask.
+        masked_full = img_dir / f"{base}_roi_masked.tif"
+        masked_crop = img_dir / f"{base}_roi_masked_cropped.tif"
+
+        img_data = self.image_layer.data
+        dtype = img_data.dtype
+
+        # Build alpha channel in SAME dtype as image so dtype is preserved.
+        # Use 0 outside ROI, max inside ROI (alpha semantics: 0=transparent, max=opaque).
+        if np.issubdtype(dtype, np.integer):
+            alpha_max = np.iinfo(dtype).max
+        else:
+            alpha_max = 1.0
+        alpha = (res.mask.astype(dtype) * alpha_max)
+
+        # Stack into (H, W, 2): [image, alpha]
+        stacked_full = np.stack([img_data.astype(dtype, copy=False), alpha], axis=-1)
+
+        # Write full-size masked TIFF with associated alpha
+        # Note: 'assocalpha' marks the last sample as alpha (missing outside ROI).
+        tiff.imwrite(
+            str(masked_full),
+            stacked_full,
+            photometric="minisblack",
+            extrasamples="assocalpha",
+        )
+        print(f"[gui] Saved full-size masked TIFF: {masked_full.name}")
+
+        # Tight crop to ROI bounding box (for smaller files)
+        ys, xs = np.where(res.mask)
+        y0, y1 = int(ys.min()), int(ys.max() + 1)
+        x0, x1 = int(xs.min()), int(xs.max() + 1)
+        cropped_img = img_data[y0:y1, x0:x1]
+        cropped_alpha = alpha[y0:y1, x0:x1]
+        stacked_crop = np.stack([cropped_img, cropped_alpha], axis=-1)
+
+        tiff.imwrite(
+            str(masked_crop),
+            stacked_crop,
+            photometric="minisblack",
+            extrasamples="assocalpha",
+        )
+        print(f"[gui] Saved cropped masked TIFF: {masked_crop.name}")
         well, day, time_ = parse_from_path(img_dir / current_name)
         parts = (img_dir / current_name).resolve().parts
         proj_root = None
