@@ -99,9 +99,15 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_open = QtWidgets.QPushButton('Open Image')
         self.btn_prev = QtWidgets.QPushButton('Prev')
         self.btn_next = QtWidgets.QPushButton('Next')
-        self.btn_save = QtWidgets.QPushButton('Save ROI')
-        btn_bar.addWidget(self.btn_open); btn_bar.addStretch(1)
-        btn_bar.addWidget(self.btn_prev); btn_bar.addWidget(self.btn_next); btn_bar.addWidget(self.btn_save)
+    self.btn_save = QtWidgets.QPushButton('Save ROI')
+    self.btn_delete = QtWidgets.QPushButton('Delete ROI')
+    btn_bar.addWidget(self.btn_open)
+    btn_bar.addStretch(1)
+    btn_bar.addWidget(self.btn_prev)
+    btn_bar.addWidget(self.btn_next)
+    btn_bar.addWidget(self.btn_save)
+    btn_bar.addWidget(self.btn_delete)
+    layout.addLayout(btn_bar)
         layout.addLayout(btn_bar)
         self.viewer = napari.Viewer()
         self.viewer.window._qt_window.setWindowFlag(QtCore.Qt.Widget, True)
@@ -109,10 +115,26 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         print('[gui] Napari viewer created.')
         self.current_dir = None; self.file_list = []; self.file_index = -1
         self.image_layer = None; self.shapes = None
-        self.btn_open.clicked.connect(self.open_image_dialog)
-        self.btn_prev.clicked.connect(self.prev_image)
-        self.btn_next.clicked.connect(self.next_image)
-        self.btn_save.clicked.connect(self.save_roi)
+    self.btn_open.clicked.connect(self.open_image_dialog)
+    self.btn_prev.clicked.connect(self.prev_image)
+    self.btn_next.clicked.connect(self.next_image)
+    self.btn_save.clicked.connect(self.confirm_save_roi)
+    self.btn_delete.clicked.connect(self.confirm_delete_roi)
+    def confirm_save_roi(self):
+        reply = QtWidgets.QMessageBox.question(self, 'Confirm Save', 'Are you sure you want to save this ROI?',
+                                              QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            self.save_roi()
+
+    def confirm_delete_roi(self):
+        if self.shapes is None or len(self.shapes.data) == 0:
+            QtWidgets.QMessageBox.information(self, 'No ROI', 'No ROI to delete.')
+            return
+        reply = QtWidgets.QMessageBox.question(self, 'Delete ROI', 'Are you sure you want to delete the current ROI?',
+                                              QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            self.shapes.data = []
+            QtWidgets.QMessageBox.information(self, 'Deleted', 'ROI deleted.')
         self.setAcceptDrops(True)
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls(): event.acceptProposedAction()
@@ -173,13 +195,19 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         tiff.imwrite(str(mask_tif), res.mask.astype(np.uint8)*255)
         save_roi_json(str(roi_json), res.vertices_yx, str(img_dir / Path(current_name)))
         print(f'[gui] Saved: {mask_tif.name}, {roi_json.name}')
-        well, day, time = parse_from_path(img_dir / current_name)
+        # Check that files were saved
+        import time
+        time.sleep(0.1)  # Small delay to ensure file system update
+        if not (roi_json.exists() and mask_tif.exists()):
+            QtWidgets.QMessageBox.critical(self, 'Save Failed', 'ROI or mask file was not saved correctly!')
+            print('[gui] Save failed: file(s) missing.'); return
+        well, day, time_ = parse_from_path(img_dir / current_name)
         parts = (img_dir / current_name).resolve().parts
         proj_root = None
         if 'wells' in parts:
             i = parts.index('wells'); proj_root = Path(*parts[:i])
         px_um = read_pixel_size_um(img_dir / current_name)
-        row = {'image_path': str((img_dir / current_name).resolve()), 'well': well, 'day': day, 'time': time,
+        row = {'image_path': str((img_dir / current_name).resolve()), 'well': well, 'day': day, 'time': time_,
                'area_px': res.area_px, 'perimeter_px': res.perimeter_px, 'centroid_yx': json.dumps(res.centroid_yx),
                'pixel_size_um': px_um if px_um is not None else ''}
         def append_csv(csv_path: Path):
