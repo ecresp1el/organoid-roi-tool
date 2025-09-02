@@ -4,10 +4,10 @@ from pathlib import Path
 import numpy as np
 import tifffile as tiff
 import pandas as pd
-print("[gui] Starting Organoid ROI Tool v8...")
+print("[gui] Starting Organoid ROI Tool v9...")
 print(f"[gui] Python: {sys.version}")
 try:
-    from PySide6 import QtWidgets, QtCore
+    from PySide6 import QtWidgets, QtCore, QtGui
     import napari
     print(f"[gui] PySide6 imported, napari imported.")
 except Exception as e:
@@ -125,7 +125,7 @@ def upsert_row(csv_path: Path, row: dict, key="image_path"):
 class OrganoidROIApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Organoid ROI Tool v8')
+        self.setWindowTitle('Organoid ROI Tool v9')
         self.resize(1200, 800)
         central = QtWidgets.QWidget(); self.setCentralWidget(central)
         layout = QtWidgets.QVBoxLayout(central)
@@ -135,12 +135,15 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_next = QtWidgets.QPushButton('Next')
         self.btn_save = QtWidgets.QPushButton('Save ROI')
         self.btn_delete = QtWidgets.QPushButton('Delete ROI')
+        self.chk_auto_advance = QtWidgets.QCheckBox('Auto-advance')
+        self.chk_auto_advance.setChecked(True)
         btn_bar.addWidget(self.btn_open)
         btn_bar.addStretch(1)
         btn_bar.addWidget(self.btn_prev)
         btn_bar.addWidget(self.btn_next)
         btn_bar.addWidget(self.btn_save)
         btn_bar.addWidget(self.btn_delete)
+        btn_bar.addWidget(self.chk_auto_advance)
         layout.addLayout(btn_bar)
         self.viewer = napari.Viewer()
         self.viewer.window._qt_window.setWindowFlag(QtCore.Qt.Widget, True)
@@ -154,6 +157,18 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_save.clicked.connect(self.confirm_save_roi)
         self.btn_delete.clicked.connect(self.confirm_delete_roi)
         self.setAcceptDrops(True)
+        # Shortcuts: keep references on self
+        self.sc_save = QtWidgets.QShortcut(QtGui.QKeySequence('S'), self)
+        self.sc_save.activated.connect(self.confirm_save_roi)
+        self.sc_save2 = QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+S'), self)
+        self.sc_save2.activated.connect(self.confirm_save_roi)
+        self.sc_next = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Right), self)
+        self.sc_next.activated.connect(self.next_image)
+        self.sc_prev = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Left), self)
+        self.sc_prev.activated.connect(self.prev_image)
+        self.sc_delete = QtWidgets.QShortcut(QtGui.QKeySequence('D'), self)
+        self.sc_delete.activated.connect(self.confirm_delete_roi)
+        self.statusBar().showMessage('Ready')
     def confirm_save_roi(self):
         reply = QtWidgets.QMessageBox.question(self, 'Confirm Save', 'Are you sure you want to save this ROI?',
                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
@@ -195,6 +210,11 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         low, high = float(np.percentile(img,2)), float(np.percentile(img,98))
         self.image_layer = self.viewer.add_image(img, name=path.name, contrast_limits=(low, high))
         self.shapes = self.viewer.add_shapes(name='ROI', shape_type='polygon')
+        try:
+            # Prefer drawing mode by default for quick ROI creation
+            self.shapes.mode = 'add_polygon'
+        except Exception:
+            pass
         print(f'[gui] Image layer added via {backend}: shape={img.shape}, CL=({low:.2f},{high:.2f})')
         self.current_dir = path.parent
         self.file_list = sorted(list(self.current_dir.glob('*.tif')) + list(self.current_dir.glob('*.tiff')))
@@ -202,6 +222,20 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         except ValueError: self.file_index = 0
         self.setWindowTitle(f'Organoid ROI Tool — {path.name}')
         print(f'[gui] File browsing initialized in directory: {self.current_dir} ({len(self.file_list)} tif files)')
+        # If an ROI JSON already exists, preload it
+        base = Path(path.name).with_suffix('')
+        roi_json = self.current_dir / f"{base}_roi.json"
+        if roi_json.exists():
+            try:
+                with roi_json.open('r') as f:
+                    data = json.load(f)
+                verts = data.get('vertices_yx')
+                if verts and isinstance(verts, list):
+                    self.shapes.data = [np.asarray(verts, dtype=float)]
+                    self.statusBar().showMessage(f'Preloaded ROI from {roi_json.name}')
+                    print(f'[gui] Preloaded ROI from {roi_json}')
+            except Exception as e:
+                print(f'[gui] Failed to preload ROI {roi_json}: {e}')
     def step(self, delta: int):
         if not self.file_list:
             print('[gui] Step ignored; no files in directory.'); return
@@ -296,7 +330,10 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             proj_csv = proj_root / 'roi_measurements.csv'
             upsert_row(proj_csv, row)
             print(f'[gui] Upserted measurements into {proj_csv}')
+        self.statusBar().showMessage(f'Saved ROI: {roi_json.name}, {mask_tif.name}')
         QtWidgets.QMessageBox.information(self, 'Saved', f'ROI saved:\n{roi_json.name}\n{mask_tif.name}\nMeasurements appended.')
+        if self.chk_auto_advance.isChecked():
+            self.next_image()
 def main():
     print('[gui] Launching Qt app...')
     app = QtWidgets.QApplication(sys.argv)
