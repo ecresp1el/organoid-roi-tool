@@ -73,8 +73,28 @@ def _save_tiff_with_resolution(path: Path, data: np.ndarray, um_per_px: float = 
 
 
 def _to_time_str(hhmm: str) -> str:
-    # Input like "12:00" -> "12h00m"
-    hh, mm = hhmm.split(":")
+    """Normalize time tokens and format as "HHhMMm".
+
+    Accepts common forms:
+      - "HH:MM" (e.g., "12:00")
+      - "HHMM"  (e.g., "1200")
+      - "HH"    (e.g., "12") → assumed minutes=00
+    """
+    s = str(hhmm).strip()
+    if ":" in s:
+        parts = s.split(":")
+        if len(parts) == 2:
+            hh, mm = parts
+        else:
+            # If more than one colon, take first two components
+            hh, mm = parts[0], parts[1]
+    else:
+        if s.isdigit() and len(s) == 4:
+            hh, mm = s[:2], s[2:]
+        elif s.isdigit():
+            hh, mm = s, "00"
+        else:
+            raise ValueError(f"Invalid time token: {hhmm!r}; expected HH:MM, HHMM, or HH")
     return f"{int(hh):02d}h{int(mm):02d}m"
 
 
@@ -135,4 +155,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

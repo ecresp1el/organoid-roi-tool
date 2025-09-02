@@ -1,0 +1,7 @@
+orig_path,new_path,well,row,col,day,hour,minute
+/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_raw/synthetic_A01_1_01d00h00m.tif,/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_project/wells/A01/day_01/00h00m/synthetic_A01_1_01d00h00m.tif,A01,A,1,1,0,0
+/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_raw/synthetic_A01_1_01d12h00m.tif,/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_project/wells/A01/day_01/12h00m/synthetic_A01_1_01d12h00m.tif,A01,A,1,1,12,0
+/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_raw/synthetic_A02_1_01d00h00m.tif,/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_project/wells/A02/day_01/00h00m/synthetic_A02_1_01d00h00m.tif,A02,A,2,1,0,0
+/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_raw/synthetic_A02_1_01d12h00m.tif,/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_project/wells/A02/day_01/12h00m/synthetic_A02_1_01d12h00m.tif,A02,A,2,1,12,0
+/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_raw/synthetic_A03_1_01d00h00m.tif,/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_project/wells/A03/day_01/00h00m/synthetic_A03_1_01d00h00m.tif,A03,A,3,1,0,0
+/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_raw/synthetic_A03_1_01d12h00m.tif,/Users/ecrespo/Documents/github_project_folder/organoid-roi-tool/sample_project/wells/A03/day_01/12h00m/synthetic_A03_1_01d12h00m.tif,A03,A,3,1,12,0

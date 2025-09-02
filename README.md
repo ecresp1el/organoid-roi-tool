@@ -236,7 +236,15 @@ Use this quick recipe to prove everything is working using synthetic TIFFs.
  
 ```
 conda run -n organoid_roi_incucyte_imaging \
-  python tools/make_fake_data.py --raw sample_raw --wells A01 A02 A03 --days 01 --times 00:00 12:00
+  python tools/make_fake_data.py --raw sample_raw --wells A01 A02 A03 --days 01 --times "00:00" "12:00"
+
+Tip: The generator accepts times as HH:MM, HHMM, or HH (minutes default to 00). These are equivalent:
+
+```
+--times "00:00" "12:00"
+--times 0000 1200
+--times 00 12
+```
 ```
  
 2) Reorganize into a project layout:
@@ -269,3 +277,12 @@ Open one of the images under `sample_project/wells/...`, draw a polygon, and cli
 - `roi_measurements.csv` in the image folder and at `sample_project/roi_measurements.csv`
  
 If all of that appears, your setup is good to go.
+
+Shortcut: one‑click sample data on macOS
+
+- Double‑click `RUN_MakeSampleData_mac_Conda.command` to generate sample data and reorganize it into `sample_project` with sensible defaults (wells A01–A03; day 01; times 00:00 and 12:00).
+- You can override via environment variables before running (in Terminal):
+
+```
+export TIMES="00:00 06:00 12:00"; export DAYS="01 02"; ./RUN_MakeSampleData_mac_Conda.command
+```
