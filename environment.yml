@@ -4,6 +4,7 @@ channels:
 dependencies:
   - python=3.11
   - pip
+  - pytest>=8
   - imagecodecs>=2024.1
   - pillow>=10.3
   - pip:

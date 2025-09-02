@@ -15,8 +15,8 @@ IF %ERRORLEVEL% NEQ 0 (
 ) ELSE (
     echo [ok] Environment exists: %ENV_NAME%
 )
-echo [check] Verifying package imports (including imagecodecs)...
-conda run -n %ENV_NAME% python -c "import sys;print('python',sys.version);import napari, PySide6, numpy, tifffile, skimage, pandas, imagecodecs;print('imports ok (including imagecodecs)')"
+echo [check] Verifying package imports (including imagecodecs & pytest)...
+conda run -n %ENV_NAME% python -c "import sys;print('python',sys.version);import napari, PySide6, numpy, tifffile, skimage, pandas, imagecodecs, pytest;print('imports ok (including imagecodecs & pytest)')"
 IF %ERRORLEVEL% NEQ 0 (
   echo [error] Import check failed.
   pause

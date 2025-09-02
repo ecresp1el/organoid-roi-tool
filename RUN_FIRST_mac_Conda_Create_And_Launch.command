@@ -17,9 +17,9 @@ echo "[check] Verifying package imports in $ENV_NAME ..."
 conda run -n "$ENV_NAME" python - <<'PY'
 import sys
 print("python", sys.version)
-for m in ["napari","PySide6","numpy","tifffile","skimage","pandas","imagecodecs"]:
+for m in ["napari","PySide6","numpy","tifffile","skimage","pandas","imagecodecs","pytest"]:
     __import__(m)
-print("imports ok (including imagecodecs)")
+print("imports ok (including imagecodecs & pytest)")
 PY
 echo "[run] Launching GUI..."
 conda run -n "$ENV_NAME" python "$(dirname "$0")/gui_app.py"
