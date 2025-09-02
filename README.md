@@ -225,3 +225,47 @@ I need help adjusting the workflow for my lab
 ---
 
 Happy analyzing!
+ 
+---
+ 
+## 11) Sample Data Quick Test (Works Out‑of‑the‑Box)
+ 
+Use this quick recipe to prove everything is working using synthetic TIFFs.
+ 
+1) Generate synthetic images (flat folder):
+ 
+```
+conda run -n organoid_roi_incucyte_imaging \
+  python tools/make_fake_data.py --raw sample_raw --wells A01 A02 A03 --days 01 --times 00:00 12:00
+```
+ 
+2) Reorganize into a project layout:
+ 
+```
+conda run -n organoid_roi_incucyte_imaging \
+  python reorganize.py --raw sample_raw --out sample_project
+```
+ 
+This creates:
+ 
+```
+sample_project/
+  wells/
+    A01/day_01/00h00m/*.tif
+    A01/day_01/12h00m/*.tif
+    A02/day_01/...  A03/day_01/...
+  manifest.csv
+```
+ 
+3) Launch the GUI and draw your first ROI:
+ 
+```
+conda run -n organoid_roi_incucyte_imaging python gui_app.py
+```
+ 
+Open one of the images under `sample_project/wells/...`, draw a polygon, and click “Save ROI”. You should see:
+ 
+- `*_mask.tif`, `*_roi.json`, `*_roi_masked.tif`, `*_roi_masked_cropped.tif` next to the image
+- `roi_measurements.csv` in the image folder and at `sample_project/roi_measurements.csv`
+ 
+If all of that appears, your setup is good to go.
