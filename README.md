@@ -72,8 +72,9 @@ The organizer writes a `manifest.csv` at the project root so you can track moved
 Launch the app (mac):
 - Double‑click `RUN_GUI_mac_Conda.command`
 
-Open an image:
-- Click “Open Image” and choose a `.tif` or `.tiff`, or
+Open images:
+- Click “Open Image” to pick a single `.tif`/`.tiff`, or
+- Click “Open Folder” to browse all TIFFs in a folder, or
 - Drag and drop a file into the window.
 
 If your image has multiple frames, the app automatically applies a maximum intensity projection so you see a 2D image.
@@ -96,6 +97,19 @@ Delete the ROI:
 
 Browse images in the same folder:
 - Use the Prev / Next buttons, or press Left/Right arrow keys.
+- “Next Unlabeled” jumps to the next image without a saved ROI.
+
+Session & progress:
+- The app shows a progress bar (done / total) for the current folder.
+- Your place is saved automatically (folder, last image). Use File → “Resume Last Session” to pick up where you left off.
+- “Stop / Save Session” saves your state so you can safely close the app.
+
+Project‑wide progress dashboard:
+- Set the project root via Project → “Set Project Root…”. The project is expected to have a `wells/` directory (e.g., `project/wells/C12/day_03/...`).
+- Open the dashboard via Project → “Open Progress Dashboard”.
+- The dashboard shows totals per well and per day: Done, Total, and %.
+- “Next Unlabeled” in each row lets you jump straight to the next image without a saved ROI in that group.
+- Use “Refresh” to rescan after making changes; it also auto‑refreshes after you save an ROI.
 
 Preloading existing ROI:
 - If a matching ROI JSON file is already present for the image, the app auto‑loads it so you can review or edit.
@@ -131,6 +145,7 @@ Note on pixel size:
 - Next image: Right Arrow
 - Previous image: Left Arrow
 - Delete ROI: `D`
+- Quit: `Cmd+Q`
 
 “Auto‑advance” toggle moves to the next image automatically after a successful save.
 

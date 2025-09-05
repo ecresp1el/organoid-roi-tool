@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import sys, os, csv, json, traceback
+import sys, os, csv, json, traceback, time
 from pathlib import Path
 import numpy as np
 import tifffile as tiff
@@ -22,6 +22,198 @@ except Exception:
     _HAS_PIL = False
     print("[gui] Pillow NOT available; no TIFF fallback.")
 from roi_utils import compute_roi, save_roi_json
+
+# -----------------------------------------------------------------------------
+# Session persistence helpers
+# -----------------------------------------------------------------------------
+_APP_STATE_DIR = Path.home() / ".organoid-roi-tool"
+_APP_STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+def _global_state_path() -> Path:
+    return _APP_STATE_DIR / "state.json"
+
+def _read_json(path: Path):
+    try:
+        with path.open("r") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+def _write_json(path: Path, data: dict):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"[gui] Failed to write JSON {path}: {e}")
+
+def _merge_global_state(updates: dict):
+    st = _read_json(_global_state_path()) or {}
+    st.update(updates)
+    _write_json(_global_state_path(), st)
+
+def infer_project_root_from_path(p: Path) -> Path | None:
+    parts = p.resolve().parts
+    if 'wells' in parts:
+        i = parts.index('wells')
+        if i > 0:
+            return Path(*parts[:i])
+    return None
+
+class ProjectDashboard(QtWidgets.QDialog):
+    def __init__(self, parent, project_root: Path):
+        super().__init__(parent)
+        self.setWindowTitle('Project Progress Dashboard')
+        self.resize(800, 500)
+        self.parent_app = parent  # OrganoidROIApp
+        self.project_root = project_root
+        v = QtWidgets.QVBoxLayout(self)
+        top = QtWidgets.QHBoxLayout()
+        self.lbl_root = QtWidgets.QLabel(str(self.project_root))
+        self.btn_change = QtWidgets.QPushButton('Change Project Root')
+        self.btn_refresh = QtWidgets.QPushButton('Refresh')
+        top.addWidget(QtWidgets.QLabel('Project:'))
+        top.addWidget(self.lbl_root, 1)
+        top.addWidget(self.btn_change)
+        top.addWidget(self.btn_refresh)
+        v.addLayout(top)
+        self.tree = QtWidgets.QTreeWidget()
+        self.tree.setHeaderLabels(['Name', 'Done', 'Total', '%', 'Next Unlabeled'])
+        self.tree.setColumnWidth(0, 260)
+        v.addWidget(self.tree, 1)
+        bottom = QtWidgets.QHBoxLayout()
+        self.btn_go = QtWidgets.QPushButton('Open Next Unlabeled')
+        self.btn_close = QtWidgets.QPushButton('Close')
+        bottom.addStretch(1)
+        bottom.addWidget(self.btn_go)
+        bottom.addWidget(self.btn_close)
+        v.addLayout(bottom)
+        self.btn_close.clicked.connect(self.close)
+        self.btn_refresh.clicked.connect(self.refresh)
+        self.btn_change.clicked.connect(self.change_root)
+        self.btn_go.clicked.connect(self.open_selected_unlabeled)
+        self.tree.itemDoubleClicked.connect(lambda *_: self.open_selected_unlabeled())
+        self.data = None
+        self.refresh()
+
+    def change_root(self):
+        d = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Project Root', str(self.project_root))
+        if not d:
+            return
+        p = Path(d)
+        self.project_root = p
+        self.lbl_root.setText(str(p))
+        _merge_global_state({'last_project_root': str(p.resolve())})
+        self.refresh()
+
+    def scan(self):
+        root = self.project_root
+        wells_dir = root / 'wells'
+        if not wells_dir.exists():
+            return {'error': f'No wells/ directory under {root}', 'root': str(root), 'wells': {}}
+        wells = {}
+        total_all = 0
+        done_all = 0
+        for well_dir in sorted([p for p in wells_dir.iterdir() if p.is_dir()]):
+            well_name = well_dir.name
+            well_total = 0
+            well_done = 0
+            days = {}
+            for day_dir in sorted([p for p in well_dir.iterdir() if p.is_dir()]):
+                day_name = day_dir.name
+                day_total = 0
+                day_done = 0
+                unlabeled = []
+                # recurse one more level (times) then files
+                for sub in sorted(day_dir.rglob('*.tif')) + sorted(day_dir.rglob('*.tiff')):
+                    day_total += 1
+                    base = sub.stem
+                    roi_json = sub.parent / f"{base}_roi.json"
+                    if roi_json.exists():
+                        day_done += 1
+                    else:
+                        unlabeled.append(sub)
+                days[day_name] = {
+                    'total': day_total,
+                    'done': day_done,
+                    'next_unlabeled': str(unlabeled[0]) if unlabeled else None,
+                }
+                well_total += day_total
+                well_done += day_done
+            wells[well_name] = {
+                'total': well_total,
+                'done': well_done,
+                'days': days,
+                'next_unlabeled': self._first_unlabeled(days),
+            }
+            total_all += well_total
+            done_all += well_done
+        return {'root': str(root), 'total': total_all, 'done': done_all, 'wells': wells}
+
+    def _first_unlabeled(self, days_dict):
+        for dname in sorted(days_dict.keys()):
+            nu = days_dict[dname].get('next_unlabeled')
+            if nu:
+                return nu
+        return None
+
+    def refresh(self):
+        self.tree.clear()
+        self.data = self.scan()
+        if not self.data or 'wells' not in self.data:
+            QtWidgets.QMessageBox.warning(self, 'Scan Failed', 'Could not scan project root.')
+            return
+        # Project root row
+        total = self.data.get('total', 0) or 0
+        done = self.data.get('done', 0) or 0
+        pct = f"{int(round(100.0*done/total)) if total else 0}"
+        root_item = QtWidgets.QTreeWidgetItem(['ALL', str(done), str(total), pct, ''])
+        self.tree.addTopLevelItem(root_item)
+        # Wells
+        for well_name, winfo in sorted(self.data['wells'].items()):
+            w_total = winfo.get('total', 0)
+            w_done = winfo.get('done', 0)
+            w_pct = f"{int(round(100.0*w_done/w_total)) if w_total else 0}"
+            w_next = winfo.get('next_unlabeled') or ''
+            w_item = QtWidgets.QTreeWidgetItem([well_name, str(w_done), str(w_total), w_pct, w_next])
+            root_item.addChild(w_item)
+            # Days
+            for day_name, dinfo in sorted(winfo['days'].items()):
+                d_total = dinfo.get('total', 0)
+                d_done = dinfo.get('done', 0)
+                d_pct = f"{int(round(100.0*d_done/d_total)) if d_total else 0}"
+                d_next = dinfo.get('next_unlabeled') or ''
+                d_item = QtWidgets.QTreeWidgetItem([day_name, str(d_done), str(d_total), d_pct, d_next])
+                w_item.addChild(d_item)
+        self.tree.expandAll()
+
+    def current_next_unlabeled(self) -> Path | None:
+        it = self.tree.currentItem()
+        if not it:
+            return None
+        path_text = it.text(4)
+        if path_text:
+            p = Path(path_text)
+            return p if p.exists() else None
+        # If not set on this row, try to bubble up to well row
+        parent = it.parent()
+        if parent:
+            ptxt = parent.text(4)
+            if ptxt and Path(ptxt).exists():
+                return Path(ptxt)
+        return None
+
+    def open_selected_unlabeled(self):
+        p = self.current_next_unlabeled()
+        if not p:
+            QtWidgets.QMessageBox.information(self, 'Nothing to open', 'No next unlabeled image found for the selected row.')
+            return
+        try:
+            self.parent_app.load_image(p)
+            self.parent_app.raise_()
+            self.parent_app.activateWindow()
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, 'Open Failed', f'Failed to open image:\n{e}')
 def read_pixel_size_um(tif_path: Path):
     try:
         with tiff.TiffFile(str(tif_path)) as tf:
@@ -131,31 +323,50 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(central)
         btn_bar = QtWidgets.QHBoxLayout()
         self.btn_open = QtWidgets.QPushButton('Open Image')
+        self.btn_open_folder = QtWidgets.QPushButton('Open Folder')
         self.btn_prev = QtWidgets.QPushButton('Prev')
         self.btn_next = QtWidgets.QPushButton('Next')
+        self.btn_next_unlabeled = QtWidgets.QPushButton('Next Unlabeled')
         self.btn_save = QtWidgets.QPushButton('Save ROI')
         self.btn_delete = QtWidgets.QPushButton('Delete ROI')
+        self.btn_stop = QtWidgets.QPushButton('Stop / Save Session')
         self.chk_auto_advance = QtWidgets.QCheckBox('Auto-advance')
         self.chk_auto_advance.setChecked(True)
         btn_bar.addWidget(self.btn_open)
+        btn_bar.addWidget(self.btn_open_folder)
         btn_bar.addStretch(1)
         btn_bar.addWidget(self.btn_prev)
         btn_bar.addWidget(self.btn_next)
+        btn_bar.addWidget(self.btn_next_unlabeled)
         btn_bar.addWidget(self.btn_save)
         btn_bar.addWidget(self.btn_delete)
+        btn_bar.addWidget(self.btn_stop)
         btn_bar.addWidget(self.chk_auto_advance)
         layout.addLayout(btn_bar)
         self.viewer = napari.Viewer()
         self.viewer.window._qt_window.setWindowFlag(QtCore.Qt.Widget, True)
         layout.addWidget(self.viewer.window._qt_window)
+        # Progress UI
+        prog_bar_row = QtWidgets.QHBoxLayout()
+        self.progress_label = QtWidgets.QLabel('Progress: 0 / 0')
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        prog_bar_row.addWidget(self.progress_label)
+        prog_bar_row.addWidget(self.progress_bar)
+        layout.addLayout(prog_bar_row)
+
         print('[gui] Napari viewer created.')
         self.current_dir = None; self.file_list = []; self.file_index = -1
         self.image_layer = None; self.shapes = None
         self.btn_open.clicked.connect(self.open_image_dialog)
+        self.btn_open_folder.clicked.connect(self.open_folder_dialog)
         self.btn_prev.clicked.connect(self.prev_image)
         self.btn_next.clicked.connect(self.next_image)
+        self.btn_next_unlabeled.clicked.connect(self.next_unlabeled)
         self.btn_save.clicked.connect(self.confirm_save_roi)
         self.btn_delete.clicked.connect(self.confirm_delete_roi)
+        self.btn_stop.clicked.connect(self.stop_and_save_session)
         self.setAcceptDrops(True)
         # Shortcuts: keep references on self
         self.sc_save = QtWidgets.QShortcut(QtGui.QKeySequence('S'), self)
@@ -168,7 +379,50 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.sc_prev.activated.connect(self.prev_image)
         self.sc_delete = QtWidgets.QShortcut(QtGui.QKeySequence('D'), self)
         self.sc_delete.activated.connect(self.confirm_delete_roi)
+        self.sc_quit = QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+Q'), self)
+        self.sc_quit.activated.connect(self.close)
         self.statusBar().showMessage('Ready')
+
+        # Menu bar actions
+        self._init_menubar()
+
+        # Project root tracking
+        self.project_root: Path | None = None
+        # Dashboard instance holder
+        self.dashboard: ProjectDashboard | None = None
+
+        # Offer resume if we have a previous session
+        QtCore.QTimer.singleShot(0, self.offer_resume_last_session)
+
+    # ---------------------------
+    # Menu bar
+    # ---------------------------
+    def _init_menubar(self):
+        mb = self.menuBar()
+        file_menu = mb.addMenu('&File')
+        act_open = QtGui.QAction('Open Image…', self)
+        act_open.triggered.connect(self.open_image_dialog)
+        file_menu.addAction(act_open)
+        act_open_folder = QtGui.QAction('Open Folder…', self)
+        act_open_folder.triggered.connect(self.open_folder_dialog)
+        file_menu.addAction(act_open_folder)
+        file_menu.addSeparator()
+        act_resume = QtGui.QAction('Resume Last Session', self)
+        act_resume.triggered.connect(self.resume_last_session)
+        file_menu.addAction(act_resume)
+        file_menu.addSeparator()
+        act_quit = QtGui.QAction('Quit', self)
+        act_quit.setShortcut('Ctrl+Q')
+        act_quit.triggered.connect(self.close)
+        file_menu.addAction(act_quit)
+
+        proj_menu = mb.addMenu('&Project')
+        act_set_root = QtGui.QAction('Set Project Root…', self)
+        act_set_root.triggered.connect(self.set_project_root_dialog)
+        proj_menu.addAction(act_set_root)
+        act_open_dashboard = QtGui.QAction('Open Progress Dashboard', self)
+        act_open_dashboard.triggered.connect(self.open_dashboard)
+        proj_menu.addAction(act_open_dashboard)
     def confirm_save_roi(self):
         reply = QtWidgets.QMessageBox.question(self, 'Confirm Save', 'Are you sure you want to save this ROI?',
                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
@@ -176,14 +430,67 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             self.save_roi()
 
     def confirm_delete_roi(self):
+        # Enhanced: also offer to remove saved ROI files for accurate progress tracking
+        current_file = None
+        if self.current_dir and 0 <= self.file_index < len(self.file_list):
+            current_file = self.file_list[self.file_index]
+        files_removed = []
         if self.shapes is None or len(self.shapes.data) == 0:
-            QtWidgets.QMessageBox.information(self, 'No ROI', 'No ROI to delete.')
+            # Even if no shapes exist in the viewer, allow deleting any saved ROI files
+            if current_file:
+                base = current_file.stem
+                roi_json = self.current_dir / f"{base}_roi.json"
+                mask_tif = self.current_dir / f"{base}_mask.tif"
+                masked_full = self.current_dir / f"{base}_roi_masked.tif"
+                masked_crop = self.current_dir / f"{base}_roi_masked_cropped.tif"
+                if any(p.exists() for p in (roi_json, mask_tif, masked_full, masked_crop)):
+                    reply = QtWidgets.QMessageBox.question(
+                        self, 'Delete Saved ROI Files',
+                        'No ROI drawn. Delete any existing saved ROI files for this image?',
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        for p in (roi_json, mask_tif, masked_full, masked_crop):
+                            try:
+                                if p.exists():
+                                    p.unlink(); files_removed.append(p.name)
+                            except Exception as e:
+                                print(f'[gui] Failed to delete {p}: {e}')
+                        if files_removed:
+                            QtWidgets.QMessageBox.information(self, 'Deleted', 'Removed: ' + ", ".join(files_removed))
+                            self.update_progress_ui()
+                            self.persist_session()
+                else:
+                    QtWidgets.QMessageBox.information(self, 'No ROI', 'No ROI to delete.')
+            else:
+                QtWidgets.QMessageBox.information(self, 'No ROI', 'No ROI to delete.')
             return
-        reply = QtWidgets.QMessageBox.question(self, 'Delete ROI', 'Are you sure you want to delete the current ROI?',
-                                              QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        reply = QtWidgets.QMessageBox.question(
+            self, 'Delete ROI',
+            'Delete current ROI from viewer and remove any saved ROI files for this image?',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
         if reply == QtWidgets.QMessageBox.Yes:
             self.shapes.data = []
-            QtWidgets.QMessageBox.information(self, 'Deleted', 'ROI deleted.')
+            if current_file:
+                base = current_file.stem
+                roi_json = self.current_dir / f"{base}_roi.json"
+                mask_tif = self.current_dir / f"{base}_mask.tif"
+                masked_full = self.current_dir / f"{base}_roi_masked.tif"
+                masked_crop = self.current_dir / f"{base}_roi_masked_cropped.tif"
+                for p in (roi_json, mask_tif, masked_full, masked_crop):
+                    try:
+                        if p.exists():
+                            p.unlink(); files_removed.append(p.name)
+                    except Exception as e:
+                        print(f'[gui] Failed to delete {p}: {e}')
+            msg = 'ROI deleted.' + (f" Removed: {', '.join(files_removed)}" if files_removed else '')
+            QtWidgets.QMessageBox.information(self, 'Deleted', msg)
+            self.update_progress_ui()
+            self.persist_session()
+            try:
+                if self.dashboard is not None:
+                    self.dashboard.refresh()
+            except Exception:
+                pass
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls(): event.acceptProposedAction()
         else: event.ignore()
@@ -193,6 +500,151 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
     def open_image_dialog(self):
         fn, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Open TIFF', '', 'TIFF images (*.tif *.tiff)')
         if fn: self.load_image(Path(fn))
+    def open_folder_dialog(self):
+        dir_path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Open Folder', '')
+        if dir_path:
+            self.load_directory(Path(dir_path))
+
+    # ---------------------------
+    # Session & progress helpers
+    # ---------------------------
+    def local_session_path(self, directory: Path) -> Path:
+        return directory / '.organoid_roi_session.json'
+
+    def persist_session(self):
+        if not self.current_dir or not self.file_list:
+            return
+        info = {
+            'dir': str(self.current_dir.resolve()),
+            'last_index': int(self.file_index),
+            'last_file': self.file_list[self.file_index].name if 0 <= self.file_index < len(self.file_list) else None,
+            'timestamp': time.time(),
+            'total': len(self.file_list),
+            'done': self.count_done_in_dir(self.current_dir),
+        }
+        # Write local session
+        _write_json(self.local_session_path(self.current_dir), info)
+        # Merge global pointer
+        updates = {'last_session': info}
+        if self.project_root:
+            updates['last_project_root'] = str(self.project_root.resolve())
+        _merge_global_state(updates)
+        self.statusBar().showMessage('Session saved')
+
+    def offer_resume_last_session(self):
+        st = _read_json(_global_state_path())
+        if not st or 'last_session' not in st:
+            return
+        info = st['last_session']
+        last_dir = Path(info.get('dir', ''))
+        last_file = info.get('last_file', None)
+        if not last_dir or not last_dir.exists():
+            return
+        msg = f"Resume last session in:\n{last_dir}\n"
+        if last_file:
+            msg += f"Last image: {last_file}"
+        reply = QtWidgets.QMessageBox.question(
+            self, 'Resume?', msg,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            self.load_directory(last_dir, prefer_file=last_file)
+
+    def resume_last_session(self):
+        st = _read_json(_global_state_path())
+        if not st or 'last_session' not in st:
+            QtWidgets.QMessageBox.information(self, 'No Session', 'No previous session found.')
+            return
+        info = st['last_session']
+        last_dir = Path(info.get('dir', ''))
+        last_file = info.get('last_file', None)
+        if not last_dir or not last_dir.exists():
+            QtWidgets.QMessageBox.warning(self, 'Not Found', 'Last session directory not found.')
+            return
+        self.load_directory(last_dir, prefer_file=last_file)
+
+    def update_progress_ui(self):
+        if not self.current_dir or not self.file_list:
+            self.progress_label.setText('Progress: 0 / 0')
+            self.progress_bar.setValue(0)
+            return
+        total = len(self.file_list)
+        done = self.count_done_in_dir(self.current_dir)
+        pct = int(round(100.0 * done / total)) if total > 0 else 0
+        self.progress_label.setText(f'Progress: {done} / {total}')
+        self.progress_bar.setValue(pct)
+        self.statusBar().showMessage(f'Processed {done}/{total}')
+
+    def count_done_in_dir(self, directory: Path) -> int:
+        tif_files = sorted(list(directory.glob('*.tif')) + list(directory.glob('*.tiff')))
+        cnt = 0
+        for f in tif_files:
+            base = f.stem
+            roi_json = directory / f"{base}_roi.json"
+            if roi_json.exists():
+                cnt += 1
+        return cnt
+
+    def find_next_unlabeled(self, start_index: int = 0) -> int:
+        if not self.file_list:
+            return -1
+        n = len(self.file_list)
+        for k in range(n):
+            idx = (start_index + k) % n
+            base = self.file_list[idx].stem
+            if not (self.current_dir / f"{base}_roi.json").exists():
+                return idx
+        return -1
+
+    # ---------------------------
+    # Directory loader
+    # ---------------------------
+    def load_directory(self, directory: Path, prefer_file: str | None = None):
+        directory = Path(directory)
+        tif_files = sorted(list(directory.glob('*.tif')) + list(directory.glob('*.tiff')))
+        if not tif_files:
+            QtWidgets.QMessageBox.information(self, 'Empty Folder', 'No TIFF images found in this folder.')
+            return
+        self.current_dir = directory
+        self.file_list = tif_files
+        pr = infer_project_root_from_path(directory)
+        if pr:
+            self.project_root = pr
+            _merge_global_state({'last_project_root': str(pr.resolve())})
+        # Determine starting index
+        idx = 0
+        # If a specific file is preferred (from resume)
+        if prefer_file:
+            for i, f in enumerate(self.file_list):
+                if f.name == prefer_file:
+                    idx = i; break
+        else:
+            # Try local session index
+            sess = _read_json(self.local_session_path(directory)) or {}
+            idx = int(sess.get('last_index', 0))
+            if not (0 <= idx < len(self.file_list)):
+                idx = 0
+            # Prefer first unlabeled if available
+            nu = self.find_next_unlabeled(start_index=idx)
+            if nu != -1:
+                idx = nu
+        self.file_index = idx
+        self.load_image(self.file_list[self.file_index])
+        # Progress will be updated in load_image
+
+    def next_unlabeled(self):
+        if not self.file_list:
+            return
+        start = (self.file_index + 1) if self.file_index >= 0 else 0
+        idx = self.find_next_unlabeled(start)
+        if idx == -1:
+            QtWidgets.QMessageBox.information(self, 'Done', 'All images in this folder have an ROI.')
+            return
+        self.file_index = idx
+        self.load_image(self.file_list[self.file_index])
+
+    def stop_and_save_session(self):
+        self.persist_session()
+        QtWidgets.QMessageBox.information(self, 'Session Saved', 'Your session has been saved. You can safely close the app and resume later from File → Resume Last Session.')
     def load_image(self, path: Path):
         print(f'[gui] Loading image: {path}')
         try:
@@ -223,7 +675,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.setWindowTitle(f'Organoid ROI Tool — {path.name}')
         print(f'[gui] File browsing initialized in directory: {self.current_dir} ({len(self.file_list)} tif files)')
         # If an ROI JSON already exists, preload it
-        base = Path(path.name).with_suffix('')
+        base = Path(path).stem
         roi_json = self.current_dir / f"{base}_roi.json"
         if roi_json.exists():
             try:
@@ -236,6 +688,9 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
                     print(f'[gui] Preloaded ROI from {roi_json}')
             except Exception as e:
                 print(f'[gui] Failed to preload ROI {roi_json}: {e}')
+        # Update progress and persist current position
+        self.update_progress_ui()
+        self.persist_session()
     def step(self, delta: int):
         if not self.file_list:
             print('[gui] Step ignored; no files in directory.'); return
@@ -256,13 +711,12 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         print(f"[gui] ROI computed: area_px={res.area_px:.2f}, perimeter_px={res.perimeter_px:.2f}, centroid={res.centroid_yx}")
         current_name = self.image_layer.name
         img_dir = self.current_dir
-        base = Path(current_name).with_suffix('')
+        base = Path(current_name).stem
         roi_json = img_dir / f"{base}_roi.json"
         mask_tif = img_dir / f"{base}_mask.tif"
         tiff.imwrite(str(mask_tif), res.mask.astype(np.uint8)*255)
         save_roi_json(str(roi_json), res.vertices_yx, str(img_dir / Path(current_name)))
         print(f'[gui] Saved: {mask_tif.name}, {roi_json.name}')
-        import time
         time.sleep(0.1)  # Small delay to ensure file system update
         if not (roi_json.exists() and mask_tif.exists()):
             QtWidgets.QMessageBox.critical(self, 'Save Failed', 'ROI or mask file was not saved correctly!')
@@ -318,6 +772,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         proj_root = None
         if 'wells' in parts:
             i = parts.index('wells'); proj_root = Path(*parts[:i])
+            self.project_root = proj_root
+            _merge_global_state({'last_project_root': str(proj_root.resolve())})
         px_um = read_pixel_size_um(img_dir / current_name)
         row = {'image_path': str((img_dir / current_name).resolve()), 'well': well, 'day': day, 'time': time_,
                'area_px': res.area_px, 'perimeter_px': res.perimeter_px, 'centroid_yx': json.dumps(res.centroid_yx),
@@ -332,8 +788,46 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             print(f'[gui] Upserted measurements into {proj_csv}')
         self.statusBar().showMessage(f'Saved ROI: {roi_json.name}, {mask_tif.name}')
         QtWidgets.QMessageBox.information(self, 'Saved', f'ROI saved:\n{roi_json.name}\n{mask_tif.name}\nMeasurements appended.')
+        self.update_progress_ui()
+        self.persist_session()
+        # Refresh dashboard if open
+        try:
+            if self.dashboard is not None:
+                self.dashboard.refresh()
+        except Exception:
+            pass
         if self.chk_auto_advance.isChecked():
             self.next_image()
+    def closeEvent(self, event: QtGui.QCloseEvent):
+        try:
+            self.persist_session()
+        except Exception:
+            pass
+        super().closeEvent(event)
+
+    # ---------------------------
+    # Project root & dashboard
+    # ---------------------------
+    def set_project_root_dialog(self):
+        d = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Project Root', str(self.project_root) if self.project_root else '')
+        if not d:
+            return
+        self.project_root = Path(d)
+        _merge_global_state({'last_project_root': str(self.project_root.resolve())})
+
+    def open_dashboard(self):
+        pr = self.project_root
+        if pr is None:
+            # Try from global state
+            st = _read_json(_global_state_path()) or {}
+            pr_txt = st.get('last_project_root', '')
+            if pr_txt:
+                pr = Path(pr_txt)
+        if pr is None or not pr.exists():
+            QtWidgets.QMessageBox.information(self, 'Select Project', 'Please set the project root (Project → Set Project Root…)')
+            return
+        self.dashboard = ProjectDashboard(self, pr)
+        self.dashboard.show()
 def main():
     print('[gui] Launching Qt app...')
     app = QtWidgets.QApplication(sys.argv)
