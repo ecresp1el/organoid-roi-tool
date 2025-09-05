@@ -91,7 +91,7 @@ Draw an ROI:
 
 Save the ROI:
 - Click “Save ROI” (or press S / Cmd+S).
-- If “Auto‑advance” is checked, the app will move to the next image in the same folder after saving.
+- If “Auto‑advance (Scope)” is checked, the app will move to the next unlabeled image within the current scope after saving.
 
 Delete the ROI:
 - Click “Delete ROI” (or press D), then confirm.
