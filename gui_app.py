@@ -323,7 +323,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(central)
         btn_bar = QtWidgets.QHBoxLayout()
         self.btn_open = QtWidgets.QPushButton('Open Image')
-        self.btn_open_folder = QtWidgets.QPushButton('Open Folder')
+        self.btn_init_project = QtWidgets.QPushButton('Initialize Project')
+        self.btn_open_folder = QtWidgets.QPushButton('Import Project')
         self.btn_prev = QtWidgets.QPushButton('Prev')
         self.btn_next = QtWidgets.QPushButton('Next')
         self.btn_next_unlabeled = QtWidgets.QPushButton('Next Unlabeled')
@@ -333,6 +334,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.chk_auto_advance = QtWidgets.QCheckBox('Auto-advance')
         self.chk_auto_advance.setChecked(True)
         btn_bar.addWidget(self.btn_open)
+        btn_bar.addWidget(self.btn_init_project)
         btn_bar.addWidget(self.btn_open_folder)
         btn_bar.addStretch(1)
         btn_bar.addWidget(self.btn_prev)
@@ -360,7 +362,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.current_dir = None; self.file_list = []; self.file_index = -1
         self.image_layer = None; self.shapes = None
         self.btn_open.clicked.connect(self.open_image_dialog)
-        self.btn_open_folder.clicked.connect(self.open_folder_dialog)
+        self.btn_init_project.clicked.connect(self.open_import_project_dialog)
+        self.btn_open_folder.clicked.connect(self.open_project_dialog)
         self.btn_prev.clicked.connect(self.prev_image)
         self.btn_next.clicked.connect(self.next_image)
         self.btn_next_unlabeled.clicked.connect(self.next_unlabeled)
@@ -420,9 +423,12 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         act_set_root = QtGui.QAction('Set Project Root…', self)
         act_set_root.triggered.connect(self.set_project_root_dialog)
         proj_menu.addAction(act_set_root)
-        act_import = QtGui.QAction('Import Project (Reorganize)…', self)
-        act_import.triggered.connect(self.open_import_project_dialog)
-        proj_menu.addAction(act_import)
+        act_init = QtGui.QAction('Initialize Project (Reorganize)…', self)
+        act_init.triggered.connect(self.open_import_project_dialog)
+        proj_menu.addAction(act_init)
+        act_open_proj = QtGui.QAction('Import Existing Project…', self)
+        act_open_proj.triggered.connect(self.open_project_dialog)
+        proj_menu.addAction(act_open_proj)
         act_open_dashboard = QtGui.QAction('Open Progress Dashboard', self)
         act_open_dashboard.triggered.connect(self.open_dashboard)
         proj_menu.addAction(act_open_dashboard)
@@ -838,6 +844,37 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
     def open_import_project_dialog(self):
         dlg = ImportProjectDialog(self)
         dlg.exec()
+
+    def open_project_dialog(self):
+        d = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Project Root (with wells/)', str(self.project_root) if self.project_root else '')
+        if not d:
+            return
+        pr = Path(d)
+        if not (pr / 'wells').exists():
+            QtWidgets.QMessageBox.warning(self, 'Invalid Project', 'Selected folder does not contain a wells/ directory.')
+            return
+        self.project_root = pr
+        _merge_global_state({'last_project_root': str(pr.resolve())})
+        # Try to jump to first unlabeled; else open dashboard
+        nu = self.find_first_unlabeled_in_project(pr)
+        if nu is not None:
+            try:
+                self.load_image(nu)
+                return
+            except Exception:
+                pass
+        self.open_dashboard()
+
+    def find_first_unlabeled_in_project(self, project_root: Path) -> Path | None:
+        wells_dir = project_root / 'wells'
+        if not wells_dir.exists():
+            return None
+        for well_dir in sorted([p for p in wells_dir.iterdir() if p.is_dir()]):
+            for tif in sorted(well_dir.rglob('*.tif')) + sorted(well_dir.rglob('*.tiff')):
+                base = tif.stem
+                if not (tif.parent / f"{base}_roi.json").exists():
+                    return tif
+        return None
 
 class ImportProjectDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
