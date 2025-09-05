@@ -95,6 +95,7 @@ def organize(raw: str | Path, out: str | Path, copy: bool = False, dry_run: bool
         rows_out.append({
             "orig_path": str(p),
             "new_path": str(dest),
+            "new_rel": str(dest.relative_to(out_root)),
             "well": meta["well"],
             "row": meta["row"],
             "col": meta["col"],
@@ -103,7 +104,7 @@ def organize(raw: str | Path, out: str | Path, copy: bool = False, dry_run: bool
             "minute": meta["minute"],
         })
 
-    header = ["orig_path","new_path","well","row","col","day","hour","minute"]
+    header = ["orig_path","new_path","new_rel","well","row","col","day","hour","minute"]
     if not dry_run:
         write_header = not manifest_path.exists()
         with manifest_path.open("a", newline="") as f:

@@ -362,6 +362,23 @@ def list_original_tiffs(directory: Path):
     files = sorted(directory.glob('*.tif')) + sorted(directory.glob('*.tiff'))
     return [p for p in files if not is_derived_tiff_name(p.name)]
 
+# -----------------------------------------------------------------------------
+# Project portability helpers
+# -----------------------------------------------------------------------------
+def get_current_user() -> str:
+    for key in ('ORGANOID_ROI_USER', 'USER', 'LOGNAME'):
+        v = os.environ.get(key)
+        if v:
+            return v
+    try:
+        import getpass
+        return getpass.getuser()
+    except Exception:
+        return 'unknown'
+
+def project_session_path(project_root: Path) -> Path:
+    return project_root / '.roi_session.json'
+
 def is_subpath(child: Path, parent: Path) -> bool:
     try:
         child.resolve().relative_to(parent.resolve())
@@ -436,17 +453,27 @@ def load_image_any(path: Path):
                 raise
         raise
 
-def upsert_row(csv_path: Path, row: dict, key="image_path"):
+def upsert_row(csv_path: Path, row: dict, key="image_relpath"):
     """Append or update a single row keyed by `key` (default: image_path).
     Ensures exactly one row per image in the CSV.
     """
-    cols = ["image_path", "well", "day", "time", "area_px", "perimeter_px", "centroid_yx", "pixel_size_um"]
+    cols = [
+        "image_relpath",
+        "image_path",
+        "well", "day", "time",
+        "area_px", "perimeter_px", "centroid_yx", "pixel_size_um",
+        "user", "timestamp_iso",
+    ]
     try:
         if csv_path.exists():
             df = pd.read_csv(csv_path)
-            # Drop any existing rows with the same key
+            # Drop any existing rows with the same key (prefer relpath uniqueness)
             if key in df.columns:
                 df = df[df[key] != row[key]]
+            elif 'image_relpath' in df.columns and 'image_relpath' in row:
+                df = df[df['image_relpath'] != row['image_relpath']]
+            elif 'image_path' in df.columns and 'image_path' in row:
+                df = df[df['image_path'] != row['image_path']]
             # Ensure all columns exist; add missing ones
             for c in cols:
                 if c not in df.columns:
@@ -707,6 +734,24 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         if self.project_root:
             updates['last_project_root'] = str(self.project_root.resolve())
         _merge_global_state(updates)
+        # Project-local session: store relative last file and scope for portability
+        try:
+            if self.project_root:
+                pr = self.project_root.resolve()
+                last_file_rel = None
+                if 0 <= self.file_index < len(self.file_list):
+                    try:
+                        last_file_rel = str(self.file_list[self.file_index].resolve().relative_to(pr))
+                    except Exception:
+                        last_file_rel = self.file_list[self.file_index].name
+                proj_info = {
+                    'last_file_relpath': last_file_rel,
+                    'nav_scope_type': self.nav_scope_type,
+                    'timestamp': time.time(),
+                }
+                _write_json(project_session_path(pr), proj_info)
+        except Exception as e:
+            print(f'[gui] Warning: failed to write project session: {e}')
         self.statusBar().showMessage('Session saved')
 
     def offer_resume_last_session(self):
@@ -860,7 +905,11 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             with manifest.open('r', newline='') as f:
                 r = csv.DictReader(f)
                 for row in r:
-                    p = Path(row.get('new_path', '')).expanduser()
+                    rel = row.get('new_rel') or ''
+                    if rel:
+                        p = (Path(proj) / rel).resolve()
+                    else:
+                        p = Path(row.get('new_path', '')).expanduser()
                     if not p or not p.exists():
                         continue
                     if is_derived_tiff_name(p.name):
@@ -1011,7 +1060,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         roi_json = img_dir / f"{base}_roi.json"
         mask_tif = img_dir / f"{base}_mask.tif"
         tiff.imwrite(str(mask_tif), res.mask.astype(np.uint8)*255)
-        save_roi_json(str(roi_json), res.vertices_yx, str(img_dir / Path(current_name)))
+        # Base ROI JSON was re-written later with extra fields; still print summary
         print(f'[gui] Saved: {mask_tif.name}, {roi_json.name}')
         time.sleep(0.1)  # Small delay to ensure file system update
         if not (roi_json.exists() and mask_tif.exists()):
@@ -1071,9 +1120,25 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             self.project_root = proj_root
             _merge_global_state({'last_project_root': str(proj_root.resolve())})
         px_um = read_pixel_size_um(img_dir / current_name)
-        row = {'image_path': str((img_dir / current_name).resolve()), 'well': well, 'day': day, 'time': time_,
-               'area_px': res.area_px, 'perimeter_px': res.perimeter_px, 'centroid_yx': json.dumps(res.centroid_yx),
-               'pixel_size_um': px_um if px_um is not None else ''}
+        # Attribution and portability fields
+        user = get_current_user()
+        timestamp_iso = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())
+        image_abs = (img_dir / current_name).resolve()
+        image_rel = None
+        if proj_root:
+            try:
+                image_rel = str(image_abs.relative_to(proj_root.resolve()))
+            except Exception:
+                image_rel = str(Path('wells') / Path(current_name))
+        row = {
+            'image_relpath': image_rel if image_rel else '',
+            'image_path': str(image_abs),
+            'well': well, 'day': day, 'time': time_,
+            'area_px': res.area_px, 'perimeter_px': res.perimeter_px, 'centroid_yx': json.dumps(res.centroid_yx),
+            'pixel_size_um': px_um if px_um is not None else '',
+            'user': user,
+            'timestamp_iso': timestamp_iso,
+        }
         # Upsert (one row per image) into local and project-level CSVs
         local_csv = img_dir / 'roi_measurements.csv'
         upsert_row(local_csv, row)
@@ -1082,6 +1147,14 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             proj_csv = proj_root / 'roi_measurements.csv'
             upsert_row(proj_csv, row)
             print(f'[gui] Upserted measurements into {proj_csv}')
+        # Enrich ROI JSON with attribution and relative path for portability
+        try:
+            extra = {'user': user, 'timestamp_iso': timestamp_iso}
+            if image_rel:
+                extra['image_relpath'] = image_rel
+            save_roi_json(str(roi_json), res.vertices_yx, str(img_dir / Path(current_name)), extra=extra)
+        except Exception:
+            pass
         self.statusBar().showMessage(f'Saved ROI: {roi_json.name}, {mask_tif.name}')
         QtWidgets.QMessageBox.information(self, 'Saved', f'ROI saved:\n{roi_json.name}\n{mask_tif.name}\nMeasurements appended.')
         self.update_progress_ui()
@@ -1167,12 +1240,21 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.project_root = pr
         _merge_global_state({'last_project_root': str(pr.resolve())})
         self.set_nav_scope('project', pr)
-        # Try to jump to first unlabeled; else open dashboard
+        # Try to resume from project-local session
+        sess = _read_json(project_session_path(pr)) or {}
+        last_rel = sess.get('last_file_relpath')
+        if last_rel:
+            p = (pr / last_rel)
+            if p.exists():
+                try:
+                    self.load_image(p); return
+                except Exception:
+                    pass
+        # Else jump to first unlabeled; else open dashboard
         nu = self.find_first_unlabeled_in_project(pr)
         if nu is not None:
             try:
-                self.load_image(nu)
-                return
+                self.load_image(nu); return
             except Exception:
                 pass
         self.open_dashboard()
