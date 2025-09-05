@@ -99,6 +99,7 @@ Browse images:
 - Use the Prev / Next buttons, or press Left/Right arrow keys.
 - “Next Unlabeled” jumps to the next image without a saved ROI in the current folder.
 - Use the Project Dashboard for project-wide navigation across wells/days.
+- Note: Navigation ignores derived ROI outputs (`*_mask.tif`, `*_roi_masked*.tif`) so you only step through original images.
 
 Session & progress:
 - The app shows a progress bar (done / total) for the current folder.

@@ -124,8 +124,10 @@ class ProjectDashboard(QtWidgets.QDialog):
                 day_total = 0
                 day_done = 0
                 unlabeled = []
-                # recurse one more level (times) then files
-                for sub in sorted(day_dir.rglob('*.tif')) + sorted(day_dir.rglob('*.tiff')):
+                # recurse one more level (times) then files, excluding derived ROI outputs
+                all_tifs = sorted(day_dir.rglob('*.tif')) + sorted(day_dir.rglob('*.tiff'))
+                tifs = [sub for sub in all_tifs if not is_derived_tiff_name(sub.name)]
+                for sub in tifs:
                     day_total += 1
                     base = sub.stem
                     roi_json = sub.parent / f"{base}_roi.json"
@@ -350,6 +352,21 @@ def ensure_2d_image(img: np.ndarray) -> np.ndarray:
         rgb = reduced[..., :3].astype(np.float32)
         return 0.2989 * rgb[..., 0] + 0.5870 * rgb[..., 1] + 0.1140 * rgb[..., 2]
     return np.squeeze(reduced)
+
+# -----------------------------------------------------------------------------
+# File listing helpers to avoid navigating into derived ROI outputs
+# -----------------------------------------------------------------------------
+def is_derived_tiff_name(name: str) -> bool:
+    n = name.lower()
+    return (
+        n.endswith('_mask.tif') or n.endswith('_mask.tiff') or
+        n.endswith('_roi_masked.tif') or n.endswith('_roi_masked.tiff') or
+        n.endswith('_roi_masked_cropped.tif') or n.endswith('_roi_masked_cropped.tiff')
+    )
+
+def list_original_tiffs(directory: Path):
+    files = sorted(directory.glob('*.tif')) + sorted(directory.glob('*.tiff'))
+    return [p for p in files if not is_derived_tiff_name(p.name)]
 def load_image_any(path: Path):
     try:
         img = _load_with_tifffile(path)
@@ -670,7 +687,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f'Processed {done}/{total}')
 
     def count_done_in_dir(self, directory: Path) -> int:
-        tif_files = sorted(list(directory.glob('*.tif')) + list(directory.glob('*.tiff')))
+        tif_files = list_original_tiffs(directory)
         cnt = 0
         for f in tif_files:
             base = f.stem
@@ -695,7 +712,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
     # ---------------------------
     def load_directory(self, directory: Path, prefer_file: str | None = None):
         directory = Path(directory)
-        tif_files = sorted(list(directory.glob('*.tif')) + list(directory.glob('*.tiff')))
+        tif_files = list_original_tiffs(directory)
         if not tif_files:
             QtWidgets.QMessageBox.information(self, 'Empty Folder', 'No TIFF images found in this folder.')
             return
@@ -742,6 +759,16 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.information(self, 'Session Saved', 'Your session has been saved. You can safely close the app and resume later from File → Resume Last Session.')
     def load_image(self, path: Path):
         print(f'[gui] Loading image: {path}')
+        # If a derived ROI output was selected, try to redirect to the original image
+        if is_derived_tiff_name(path.name):
+            base = path.name
+            for suf in ('_roi_masked_cropped', '_roi_masked', '_mask'):
+                if base.lower().endswith(suf + '.tif') or base.lower().endswith(suf + '.tiff'):
+                    orig = path.with_name(path.name[:-(len(suf) + 5)])  # remove suffix + .tif(f)
+                    if orig.exists():
+                        print(f'[gui] Redirecting derived output to original: {path.name} -> {orig.name}')
+                        path = orig
+                        break
         try:
             img, backend = load_image_any(path)
         except Exception as e:
@@ -763,7 +790,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             pass
         print(f'[gui] Image layer added via {backend}: shape={img.shape}, CL=({low:.2f},{high:.2f})')
         self.current_dir = path.parent
-        self.file_list = sorted(list(self.current_dir.glob('*.tif')) + list(self.current_dir.glob('*.tiff')))
+        self.file_list = list_original_tiffs(self.current_dir)
         try: self.file_index = self.file_list.index(path)
         except ValueError: self.file_index = 0
         self.setWindowTitle(f'Organoid ROI Tool — {path.name}')
@@ -955,7 +982,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         if not wells_dir.exists():
             return None
         for well_dir in sorted([p for p in wells_dir.iterdir() if p.is_dir()]):
-            for tif in sorted(well_dir.rglob('*.tif')) + sorted(well_dir.rglob('*.tiff')):
+            all_tifs = sorted(well_dir.rglob('*.tif')) + sorted(well_dir.rglob('*.tiff'))
+            for tif in [p for p in all_tifs if not is_derived_tiff_name(p.name)]:
                 base = tif.stem
                 if not (tif.parent / f"{base}_roi.json").exists():
                     return tif
