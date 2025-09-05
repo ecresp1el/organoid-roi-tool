@@ -82,7 +82,7 @@ class ProjectDashboard(QtWidgets.QDialog):
         self.tree.setColumnWidth(0, 260)
         v.addWidget(self.tree, 1)
         bottom = QtWidgets.QHBoxLayout()
-        self.btn_go = QtWidgets.QPushButton('Open Next Unlabeled')
+        self.btn_go = QtWidgets.QPushButton('Next Unlabeled (Scope)')
         self.btn_close = QtWidgets.QPushButton('Close')
         bottom.addStretch(1)
         bottom.addWidget(self.btn_go)
@@ -171,7 +171,9 @@ class ProjectDashboard(QtWidgets.QDialog):
         pct = f"{int(round(100.0*done/total)) if total else 0}"
         root_item = QtWidgets.QTreeWidgetItem(['ALL', str(done), str(total), pct, ''])
         self.tree.addTopLevelItem(root_item)
+        root_item.setData(0, QtCore.Qt.UserRole, {'type': 'project', 'path': str(self.project_root)})
         # Wells
+        wells_dir = self.project_root / 'wells'
         for well_name, winfo in sorted(self.data['wells'].items()):
             w_total = winfo.get('total', 0)
             w_done = winfo.get('done', 0)
@@ -179,6 +181,7 @@ class ProjectDashboard(QtWidgets.QDialog):
             w_next = winfo.get('next_unlabeled') or ''
             w_item = QtWidgets.QTreeWidgetItem([well_name, str(w_done), str(w_total), w_pct, w_next])
             root_item.addChild(w_item)
+            w_item.setData(0, QtCore.Qt.UserRole, {'type': 'well', 'path': str((wells_dir / well_name).resolve())})
             # Days
             for day_name, dinfo in sorted(winfo['days'].items()):
                 d_total = dinfo.get('total', 0)
@@ -187,35 +190,26 @@ class ProjectDashboard(QtWidgets.QDialog):
                 d_next = dinfo.get('next_unlabeled') or ''
                 d_item = QtWidgets.QTreeWidgetItem([day_name, str(d_done), str(d_total), d_pct, d_next])
                 w_item.addChild(d_item)
+                d_item.setData(0, QtCore.Qt.UserRole, {'type': 'day', 'path': str((wells_dir / well_name / day_name).resolve())})
         self.tree.expandAll()
 
-    def current_next_unlabeled(self) -> Path | None:
+    def open_selected_unlabeled(self):
         it = self.tree.currentItem()
         if not it:
-            return None
-        path_text = it.text(4)
-        if path_text:
-            p = Path(path_text)
-            return p if p.exists() else None
-        # If not set on this row, try to bubble up to well row
-        parent = it.parent()
-        if parent:
-            ptxt = parent.text(4)
-            if ptxt and Path(ptxt).exists():
-                return Path(ptxt)
-        return None
-
-    def open_selected_unlabeled(self):
-        p = self.current_next_unlabeled()
-        if not p:
-            QtWidgets.QMessageBox.information(self, 'Nothing to open', 'No next unlabeled image found for the selected row.')
+            QtWidgets.QMessageBox.information(self, 'Select a row', 'Select ALL, a well, or a day to set scope.')
+            return
+        meta = it.data(0, QtCore.Qt.UserRole)
+        if not meta:
+            QtWidgets.QMessageBox.information(self, 'No scope', 'Could not determine scope from selection.')
             return
         try:
-            self.parent_app.load_image(p)
-            self.parent_app.raise_()
-            self.parent_app.activateWindow()
+            self.parent_app.set_nav_scope(meta['type'], Path(meta['path']))
+            if not self.parent_app.next_unlabeled_scope(from_start=True):
+                QtWidgets.QMessageBox.information(self, 'Done', 'No unlabeled images found in the selected scope.')
+            else:
+                self.parent_app.raise_(); self.parent_app.activateWindow()
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, 'Open Failed', f'Failed to open image:\n{e}')
+            QtWidgets.QMessageBox.warning(self, 'Open Failed', f'Failed to open next unlabeled in scope:\n{e}')
 def read_pixel_size_um(tif_path: Path):
     try:
         with tiff.TiffFile(str(tif_path)) as tf:
@@ -367,6 +361,64 @@ def is_derived_tiff_name(name: str) -> bool:
 def list_original_tiffs(directory: Path):
     files = sorted(directory.glob('*.tif')) + sorted(directory.glob('*.tiff'))
     return [p for p in files if not is_derived_tiff_name(p.name)]
+
+def is_subpath(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except Exception:
+        return False
+
+def parse_day_name(name: str) -> int:
+    # expects 'day_XX'
+    try:
+        if name.lower().startswith('day_'):
+            return int(name.split('_', 1)[1])
+    except Exception:
+        pass
+    return 0
+
+def parse_time_name(name: str) -> int:
+    # expects 'HHhMMm'
+    try:
+        s = name.lower()
+        if 'h' in s and 'm' in s:
+            hh = int(s.split('h')[0])
+            mm = int(s.split('h')[1].split('m')[0])
+            return hh * 60 + mm
+    except Exception:
+        pass
+    return 0
+
+def sorted_originals_under(root: Path) -> list[Path]:
+    # Walk wells/<well>/day_XX/HHhMMm/*.tif in a stable order
+    images: list[Path] = []
+    wells_dir = root
+    # root may be project or well or day; normalize below
+    if (root / 'wells').exists():  # project root
+        wells_dir = root / 'wells'
+    # If root is a well dir, its parent is 'wells'
+    # If root is a day dir, we handle specially later
+    if wells_dir.name == 'wells':
+        # project scope: iterate wells
+        for well_dir in sorted([p for p in wells_dir.iterdir() if p.is_dir()], key=lambda p: p.name):
+            for day_dir in sorted([p for p in well_dir.iterdir() if p.is_dir()], key=lambda p: parse_day_name(p.name)):
+                for time_dir in sorted([p for p in day_dir.iterdir() if p.is_dir()], key=lambda p: parse_time_name(p.name)):
+                    images.extend(list_original_tiffs(time_dir))
+        return images
+    # If root is a well directory (contains day_* subfolders)
+    if any(p.is_dir() and p.name.lower().startswith('day_') for p in root.iterdir()):
+        for day_dir in sorted([p for p in root.iterdir() if p.is_dir()], key=lambda p: parse_day_name(p.name)):
+            for time_dir in sorted([p for p in day_dir.iterdir() if p.is_dir()], key=lambda p: parse_time_name(p.name)):
+                images.extend(list_original_tiffs(time_dir))
+        return images
+    # If root is a day directory (contains time subfolders)
+    if any(p.is_dir() and ('h' in p.name.lower()) for p in root.iterdir()):
+        for time_dir in sorted([p for p in root.iterdir() if p.is_dir()], key=lambda p: parse_time_name(p.name)):
+            images.extend(list_original_tiffs(time_dir))
+        return images
+    # Fallback: just list originals directly in root
+    return list_original_tiffs(root)
 def load_image_any(path: Path):
     try:
         img = _load_with_tifffile(path)
@@ -431,7 +483,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_open_dashboard = QtWidgets.QPushButton('Open Dashboard')
         self.btn_prev = QtWidgets.QPushButton('Prev')
         self.btn_next = QtWidgets.QPushButton('Next')
-        self.btn_next_unlabeled = QtWidgets.QPushButton('Next Unlabeled')
+        self.btn_next_unlabeled = QtWidgets.QPushButton('Next Unlabeled (Scope)')
         self.btn_save = QtWidgets.QPushButton('Save ROI')
         self.btn_delete = QtWidgets.QPushButton('Delete ROI')
         self.btn_stop = QtWidgets.QPushButton('Stop / Save Session')
@@ -459,8 +511,10 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
+        self.scope_label = QtWidgets.QLabel('Scope: Folder')
         prog_bar_row.addWidget(self.progress_label)
         prog_bar_row.addWidget(self.progress_bar)
+        prog_bar_row.addWidget(self.scope_label)
         layout.addLayout(prog_bar_row)
 
         print('[gui] Napari viewer created.')
@@ -472,7 +526,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_open_dashboard.clicked.connect(self.open_dashboard)
         self.btn_prev.clicked.connect(self.prev_image)
         self.btn_next.clicked.connect(self.next_image)
-        self.btn_next_unlabeled.clicked.connect(self.next_unlabeled)
+        self.btn_next_unlabeled.clicked.connect(lambda: self.next_unlabeled_scope(from_start=False))
         self.btn_save.clicked.connect(self.confirm_save_roi)
         self.btn_delete.clicked.connect(self.confirm_delete_roi)
         self.btn_stop.clicked.connect(self.stop_and_save_session)
@@ -497,6 +551,9 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
 
         # Project root tracking
         self.project_root: Path | None = None
+        # Navigation scope: one of 'folder', 'day', 'well', 'project'
+        self.nav_scope_type: str = 'folder'
+        self.nav_scope_root: Path | None = None
         # Dashboard instance holder
         self.dashboard: ProjectDashboard | None = None
 
@@ -747,15 +804,91 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         # Progress will be updated in load_image
 
     def next_unlabeled(self):
-        if not self.file_list:
-            return
-        start = (self.file_index + 1) if self.file_index >= 0 else 0
-        idx = self.find_next_unlabeled(start)
-        if idx == -1:
-            QtWidgets.QMessageBox.information(self, 'Done', 'All images in this folder have an ROI.')
-            return
-        self.file_index = idx
-        self.load_image(self.file_list[self.file_index])
+        # Backward compatibility: delegate to scope-aware navigation
+        if not self.next_unlabeled_scope(from_start=False):
+            QtWidgets.QMessageBox.information(self, 'Done', 'No unlabeled images found in the current scope.')
+
+    def set_nav_scope(self, scope_type: str, root: Path | None):
+        scope_type = scope_type if scope_type in ('folder', 'day', 'well', 'project') else 'folder'
+        self.nav_scope_type = scope_type
+        self.nav_scope_root = root
+        # Build a friendly scope label
+        label = scope_type.capitalize()
+        try:
+            if scope_type == 'well' and root is not None:
+                label = f"Well ({root.name})"
+            elif scope_type == 'day' and root is not None:
+                label = f"Day ({root.name})"
+            elif scope_type == 'project' and root is not None:
+                label = f"Project ({Path(root).name})"
+        except Exception:
+            pass
+        self.scope_label.setText(f'Scope: {label}')
+        print(f'[gui] Navigation scope set to {scope_type} root={root}')
+
+    def _scope_root_for_current(self) -> Path:
+        if self.nav_scope_type == 'folder' or self.nav_scope_root is None:
+            return self.current_dir if self.current_dir else Path('.')
+        return self.nav_scope_root
+
+    def _images_from_manifest(self, root: Path) -> list[Path]:
+        proj = self.project_root or infer_project_root_from_path(root) or root
+        manifest = Path(proj) / 'manifest.csv'
+        if not manifest.exists():
+            return []
+        seen = set()
+        out: list[Path] = []
+        try:
+            with manifest.open('r', newline='') as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    p = Path(row.get('new_path', '')).expanduser()
+                    if not p or not p.exists():
+                        continue
+                    if is_derived_tiff_name(p.name):
+                        continue
+                    if not is_subpath(p, root):
+                        continue
+                    if p in seen:
+                        continue
+                    seen.add(p)
+                    out.append(p)
+        except Exception as e:
+            print(f'[gui] Warning: failed to read manifest: {e}')
+            return []
+        return out
+
+    def _scope_images(self) -> list[Path]:
+        if self.nav_scope_type == 'folder' or self.nav_scope_root is None:
+            return list_original_tiffs(self.current_dir) if self.current_dir else []
+        root = self._scope_root_for_current()
+        if self.nav_scope_type == 'project' and self.project_root:
+            root = self.project_root
+        images = self._images_from_manifest(root)
+        if images:
+            return images
+        return sorted_originals_under(root)
+
+    def next_unlabeled_scope(self, from_start: bool) -> bool:
+        images = self._scope_images()
+        if not images:
+            return False
+        start_idx = 0
+        if not from_start and self.image_layer is not None and self.current_dir is not None:
+            try:
+                cur_path = (self.current_dir / self.image_layer.name).resolve()
+                start_idx = images.index(cur_path) + 1
+            except Exception:
+                start_idx = 0
+        n = len(images)
+        for k in range(n):
+            idx = (start_idx + k) % n
+            p = images[idx]
+            base = p.stem
+            if not (p.parent / f"{base}_roi.json").exists():
+                self.load_image(p)
+                return True
+        return False
 
     def stop_and_save_session(self):
         self.persist_session()
@@ -798,6 +931,18 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         except ValueError: self.file_index = 0
         self.setWindowTitle(f'Organoid ROI Tool — {path.name}')
         print(f'[gui] File browsing initialized in directory: {self.current_dir} ({len(self.file_list)} tif files)')
+        # Set default scope to Well when under a project structure
+        try:
+            parts = path.resolve().parts
+            if 'wells' in parts:
+                i = parts.index('wells')
+                if i + 1 < len(parts):
+                    well_dir = Path(*parts[:i+2])
+                    # If user hasn't explicitly set Day scope, prefer Well scope
+                    if self.nav_scope_type in ('folder', 'project') or not self.nav_scope_root or not is_subpath(path, self.nav_scope_root):
+                        self.set_nav_scope('well', well_dir)
+        except Exception:
+            pass
         # If an ROI JSON already exists, preload it
         base = Path(path).stem
         roi_json = self.current_dir / f"{base}_roi.json"
@@ -970,6 +1115,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             return
         self.project_root = pr
         _merge_global_state({'last_project_root': str(pr.resolve())})
+        self.set_nav_scope('project', pr)
         # Try to jump to first unlabeled; else open dashboard
         nu = self.find_first_unlabeled_in_project(pr)
         if nu is not None:
@@ -1090,6 +1236,7 @@ class ImportProjectDialog(QtWidgets.QDialog):
             if parent is not None:
                 parent.project_root = out_root
                 _merge_global_state({'last_project_root': str(out_root.resolve())})
+                parent.set_nav_scope('project', out_root)
                 if QtWidgets.QMessageBox.question(self, 'Open Dashboard?', 'Import complete. Open project dashboard?', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.Yes:
                     parent.open_dashboard()
         except Exception:

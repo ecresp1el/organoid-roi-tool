@@ -98,7 +98,8 @@ Delete the ROI:
 
 Browse images:
 - Use the Prev / Next buttons, or press Left/Right arrow keys.
-- “Next Unlabeled” jumps to the next image without a saved ROI in the current folder.
+- “Next Unlabeled (Scope)” advances to the next image without a saved ROI within the current navigation scope.
+- Default scope when working in a project is the current Well (across its days and times). You can switch scope via the Project Dashboard by selecting ALL (project), a specific well, or a day before clicking “Next Unlabeled (Scope)”. In the main window, the active scope is shown next to the progress bar.
 - Use the Project Dashboard for project-wide navigation across wells/days.
 - Note: Navigation ignores derived ROI outputs (`*_mask.tif`, `*_roi_masked*.tif`) so you only step through original images.
 
@@ -108,9 +109,9 @@ Session & progress:
 - “Stop / Save Session” saves your state so you can safely close the app.
 
 Project‑wide progress dashboard:
-- Open via Project → “Open Progress Dashboard”. The project root can be set from there or is inferred when you Import/Initialize a project.
+- Open via Project → “Open Progress Dashboard” or the “Open Dashboard” button. The project root can be set from there or is inferred when you Import/Initialize a project.
 - Shows totals per well and per day: Done, Total, and %.
-- “Next Unlabeled” in each row jumps to the next image without a saved ROI in that group.
+- “Next Unlabeled (Scope)” uses the selected row (ALL/well/day) as the scope and opens the next image without a saved ROI in that group. The main window’s “Next Unlabeled (Scope)” then continues within the same scope.
 - “Refresh” rescans; it also auto‑refreshes after ROI saves/deletes.
 
 Initialize project (inside the GUI):
