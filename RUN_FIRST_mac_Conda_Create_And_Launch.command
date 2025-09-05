@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "=== Organoid ROI Tool: Conda setup & launch (v7) ==="
+echo "=== Organoid ROI Tool: Conda setup & launch (v8) ==="
 ENV_NAME="organoid_roi_incucyte_imaging"
 if ! command -v conda >/dev/null 2>&1; then
   echo "[error] Conda not found on PATH. Run 'conda init' and restart Terminal."
   exit 1
 fi
 echo "[info] Using conda at: $(command -v conda)"
-if ! conda env list | grep -q " $ENV_NAME[[:space:]]"; then
-  echo "[info] Creating environment $ENV_NAME from environment.yml ..."
-  conda env create -n "$ENV_NAME" -f "$(dirname "$0")/environment.yml"
+BASE_DIR="$(conda info --base 2>/dev/null || echo "")"
+ENV_DIR="${BASE_DIR}/envs/${ENV_NAME}"
+if [ -d "$ENV_DIR" ]; then
+  echo "[ok] Environment exists at: $ENV_DIR"
 else
-  echo "[ok] Environment exists: $ENV_NAME"
+  echo "[info] Creating environment $ENV_NAME from environment.yml ..."
+  conda env create -n "$ENV_NAME" -f "$(dirname "$0")/environment.yml" || {
+    echo "[warn] Create reported an error; checking if prefix now exists..."
+    if [ -d "$ENV_DIR" ]; then
+      echo "[ok] Detected environment directory, continuing."
+    else
+      echo "[error] Failed to create environment."; exit 1
+    fi
+  }
 fi
 echo "[check] Verifying package imports in $ENV_NAME ..."
 conda run -n "$ENV_NAME" python - <<'PY'
