@@ -76,6 +76,8 @@ Open or initialize a project:
 - Initialize Project: Project → “Initialize Project (Reorganize)…” or click the “Initialize Project” button. Pick your raw folder (flat TIFFs) and a project output root. Optionally filter rows/columns and choose copy vs move. Files are organized under `wells/<well>/day_XX/HHhMMm/` and a `manifest.csv` is written.
 - Import Project: Click the “Import Project” button (or Project → “Import Existing Project…”). Select a project root that contains `wells/`. The app will jump to the first unlabeled image if available, and you can also open the Dashboard to navigate.
 - Open Dashboard: Click the “Open Dashboard” button (or Project → “Open Progress Dashboard”) to see project-wide progress and jump to the next unlabeled per well/day.
+- Migrate Project: Click the “Migrate Project” button (or Project → “Migrate Project for Portability…”) to convert older projects to portable paths and set the current user.
+- Validate Project: Click the “Validate Project” button (or Project → “Validate Project”) to confirm structure, portable paths, and CSVs are OK. The app also validates automatically when you import/initialize a project and will say “Project validation OK” if everything looks good.
 
 Set current user (project-local):
 - On first import/initialize, you’ll be prompted to enter your name/initials; this is stored in `<project>/.roi_project.json` and shown in the toolbar.

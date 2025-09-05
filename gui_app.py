@@ -407,6 +407,116 @@ def append_project_log(project_root: Path, row: dict):
     except Exception as e:
         print(f'[gui] Warning: failed to append project log: {e}')
 
+def project_needs_migration(project_root: Path) -> bool:
+    try:
+        man = project_root / 'manifest.csv'
+        if man.exists():
+            with man.open('r', newline='') as f:
+                import csv as _csv
+                try:
+                    hdr = next(_csv.reader(f))
+                    if 'new_rel' not in hdr:
+                        return True
+                except StopIteration:
+                    pass
+        meas = project_root / 'roi_measurements.csv'
+        if meas.exists():
+            with meas.open('r', newline='') as f:
+                import csv as _csv
+                try:
+                    hdr = next(_csv.reader(f))
+                    if 'image_relpath' not in hdr:
+                        return True
+                except StopIteration:
+                    pass
+    except Exception:
+        return False
+    return False
+
+def validate_project(project_root: Path) -> dict:
+    issues: list[str] = []
+    warnings: list[str] = []
+    pr = project_root.resolve()
+    wells = pr / 'wells'
+    if not wells.exists():
+        issues.append('Missing wells/ directory')
+    # Manifest checks
+    man = pr / 'manifest.csv'
+    if man.exists():
+        try:
+            df = pd.read_csv(man)
+            if 'new_rel' not in df.columns:
+                warnings.append('manifest.csv missing new_rel column (run migration)')
+            else:
+                missing = 0
+                for rel in df['new_rel'].fillna(''):
+                    if not rel:
+                        continue
+                    p = (pr / rel)
+                    if not p.exists():
+                        missing += 1
+                if missing:
+                    issues.append(f'manifest.csv references {missing} missing files (via new_rel)')
+        except Exception as e:
+            warnings.append(f'Failed to read manifest.csv: {e}')
+    else:
+        warnings.append('manifest.csv not found (ok but ordering may differ)')
+    # Measurement CSV checks
+    meas = pr / 'roi_measurements.csv'
+    if meas.exists():
+        try:
+            df = pd.read_csv(meas)
+            if 'image_relpath' not in df.columns:
+                warnings.append('roi_measurements.csv missing image_relpath column (run migration)')
+            else:
+                dup = df['image_relpath'].duplicated().sum()
+                if dup:
+                    warnings.append(f'roi_measurements.csv has {dup} duplicate image_relpath rows')
+                miss = 0
+                for rel in df['image_relpath'].fillna(''):
+                    if not rel:
+                        continue
+                    p = (pr / rel)
+                    if not p.exists():
+                        miss += 1
+                if miss:
+                    issues.append(f'roi_measurements.csv references {miss} missing image files')
+        except Exception as e:
+            warnings.append(f'Failed to read roi_measurements.csv: {e}')
+    # ROI JSON sanity: stray JSON without image; optional, warn-only
+    try:
+        stray = 0
+        if wells.exists():
+            for roi in wells.rglob('*_roi.json'):
+                base = roi.name[:-9]  # strip _roi.json
+                has_img = False
+                for ext in ('.tif', '.tiff'):
+                    if (roi.parent / (base + ext)).exists():
+                        has_img = True; break
+                if not has_img:
+                    stray += 1
+        if stray:
+            warnings.append(f'Found {stray} ROI JSONs without matching images')
+    except Exception:
+        pass
+    ok = (len(issues) == 0 and len(warnings) == 0)
+    return {
+        'ok': ok,
+        'issues': issues,
+        'warnings': warnings,
+        'project_root': str(pr),
+    }
+
+def summarize_validation(result: dict) -> str:
+    if result.get('ok'):
+        return 'Project validation OK. No issues found.'
+    parts = []
+    if result.get('issues'):
+        parts.append('Issues:\n- ' + '\n- '.join(result['issues']))
+    if result.get('warnings'):
+        parts.append('Warnings:\n- ' + '\n- '.join(result['warnings']))
+    return '\n\n'.join(parts)
+
 def is_subpath(child: Path, parent: Path) -> bool:
     try:
         child.resolve().relative_to(parent.resolve())
@@ -536,6 +646,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_init_project = QtWidgets.QPushButton('Initialize Project')
         self.btn_open_folder = QtWidgets.QPushButton('Import Project')
         self.btn_open_dashboard = QtWidgets.QPushButton('Open Dashboard')
+        self.btn_migrate_project = QtWidgets.QPushButton('Migrate Project')
+        self.btn_validate_project = QtWidgets.QPushButton('Validate Project')
         self.btn_prev = QtWidgets.QPushButton('Prev Saved ROI')
         self.btn_next_unlabeled = QtWidgets.QPushButton('Next Unlabeled (Scope)')
         self.btn_save = QtWidgets.QPushButton('Save ROI')
@@ -547,6 +659,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         btn_bar.addWidget(self.btn_init_project)
         btn_bar.addWidget(self.btn_open_folder)
         btn_bar.addWidget(self.btn_open_dashboard)
+        btn_bar.addWidget(self.btn_migrate_project)
+        btn_bar.addWidget(self.btn_validate_project)
         btn_bar.addStretch(1)
         btn_bar.addWidget(self.btn_prev)
         btn_bar.addWidget(self.btn_next_unlabeled)
@@ -584,6 +698,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_init_project.clicked.connect(self.open_import_project_dialog)
         self.btn_open_folder.clicked.connect(self.open_project_dialog)
         self.btn_open_dashboard.clicked.connect(self.open_dashboard)
+        self.btn_migrate_project.clicked.connect(self.open_migrate_project_dialog)
+        self.btn_validate_project.clicked.connect(self.validate_current_project_auto)
         self.btn_prev.clicked.connect(self.prev_saved)
         self.btn_next_unlabeled.clicked.connect(lambda: self.next_unlabeled_scope(from_start=False))
         self.btn_save.clicked.connect(self.confirm_save_roi)
@@ -651,6 +767,9 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         act_migrate = QtGui.QAction('Migrate Project for Portability…', self)
         act_migrate.triggered.connect(self.open_migrate_project_dialog)
         proj_menu.addAction(act_migrate)
+        act_validate = QtGui.QAction('Validate Project', self)
+        act_validate.triggered.connect(self.validate_current_project_auto)
+        proj_menu.addAction(act_validate)
         act_init = QtGui.QAction('Initialize Project (Reorganize)…', self)
         act_init.triggered.connect(self.open_import_project_dialog)
         proj_menu.addAction(act_init)
@@ -1090,13 +1209,15 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         print(f'[gui] Loading image: {path}')
         # If a derived ROI output was selected, try to redirect to the original image
         if is_derived_tiff_name(path.name):
-            base = path.name
+            name = path.name
             for suf in ('_roi_masked_cropped', '_roi_masked', '_mask'):
-                if base.lower().endswith(suf + '.tif') or base.lower().endswith(suf + '.tiff'):
-                    orig = path.with_name(path.name[:-(len(suf) + 5)])  # remove suffix + .tif(f)
-                    if orig.exists():
-                        print(f'[gui] Redirecting derived output to original: {path.name} -> {orig.name}')
-                        path = orig
+                for ext in ('.tif', '.tiff'):
+                    if name.lower().endswith(suf + ext):
+                        orig_name = name[:-(len(suf) + len(ext))] + ext
+                        orig = path.with_name(orig_name)
+                        if orig.exists():
+                            print(f'[gui] Redirecting derived output to original: {path.name} -> {orig.name}')
+                            path = orig
                         break
         try:
             img, backend = load_image_any(path)
@@ -1184,7 +1305,11 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         roi_json = img_dir / f"{base}_roi.json"
         mask_tif = img_dir / f"{base}_mask.tif"
         tiff.imwrite(str(mask_tif), res.mask.astype(np.uint8)*255)
-        # Base ROI JSON was re-written later with extra fields; still print summary
+        # Write a minimal ROI JSON immediately so existence checks pass
+        try:
+            save_roi_json(str(roi_json), res.vertices_yx, str(img_dir / Path(current_name)))
+        except Exception as e:
+            print(f'[gui] Warning: initial ROI JSON write failed: {e}')
         print(f'[gui] Saved: {mask_tif.name}, {roi_json.name}')
         time.sleep(0.1)  # Small delay to ensure file system update
         if not (roi_json.exists() and mask_tif.exists()):
@@ -1379,6 +1504,25 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.set_nav_scope('project', pr)
         # Ensure user is set at project level
         self.prompt_for_user_if_needed(pr)
+        # Suggest migration if legacy fields are missing
+        try:
+            if project_needs_migration(pr):
+                if QtWidgets.QMessageBox.question(self, 'Migrate Project?', 'This project is missing portable path fields. Run migration now?', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.Yes:
+                    dlg = MigrateProjectDialog(self)
+                    dlg.ed_proj.setText(str(pr))
+                    dlg.show()
+                    dlg.run_migration()
+        except Exception:
+            pass
+        # Auto-validate project and inform user
+        try:
+            res = validate_project(pr)
+            if res.get('ok'):
+                QtWidgets.QMessageBox.information(self, 'Project Valid', 'Project validation OK. No issues found.')
+            else:
+                QtWidgets.QMessageBox.warning(self, 'Project Validation', summarize_validation(res))
+        except Exception:
+            pass
         # Try to resume from project-local session
         sess = _read_json(project_session_path(pr)) or {}
         last_rel = sess.get('last_file_relpath')
@@ -1401,6 +1545,20 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
     def open_migrate_project_dialog(self):
         dlg = MigrateProjectDialog(self)
         dlg.exec()
+
+    def validate_current_project_auto(self):
+        pr = self.project_root
+        if not pr:
+            QtWidgets.QMessageBox.information(self, 'No Project', 'Import or set a project first.')
+            return
+        try:
+            res = validate_project(pr)
+            if res.get('ok'):
+                QtWidgets.QMessageBox.information(self, 'Project Valid', 'Project validation OK. No issues found.')
+            else:
+                QtWidgets.QMessageBox.warning(self, 'Project Validation', summarize_validation(res))
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, 'Validation Failed', f'Validation failed: {e}')
 
     def find_first_unlabeled_in_project(self, project_root: Path) -> Path | None:
         wells_dir = project_root / 'wells'
@@ -1514,6 +1672,15 @@ class ImportProjectDialog(QtWidgets.QDialog):
                 _merge_global_state({'last_project_root': str(out_root.resolve())})
                 parent.set_nav_scope('project', out_root)
                 parent.prompt_for_user_if_needed(out_root)
+                # Auto-validate newly created project
+                try:
+                    res = validate_project(out_root)
+                    if res.get('ok'):
+                        QtWidgets.QMessageBox.information(self, 'Project Valid', 'Project validation OK. No issues found.')
+                    else:
+                        QtWidgets.QMessageBox.warning(self, 'Project Validation', summarize_validation(res))
+                except Exception:
+                    pass
                 if QtWidgets.QMessageBox.question(self, 'Open Dashboard?', 'Import complete. Open project dashboard?', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.Yes:
                     parent.open_dashboard()
         except Exception:
