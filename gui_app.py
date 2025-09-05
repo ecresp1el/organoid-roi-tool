@@ -481,8 +481,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_init_project = QtWidgets.QPushButton('Initialize Project')
         self.btn_open_folder = QtWidgets.QPushButton('Import Project')
         self.btn_open_dashboard = QtWidgets.QPushButton('Open Dashboard')
-        self.btn_prev = QtWidgets.QPushButton('Prev')
-        self.btn_next = QtWidgets.QPushButton('Next')
+        self.btn_prev = QtWidgets.QPushButton('Prev Saved ROI')
         self.btn_next_unlabeled = QtWidgets.QPushButton('Next Unlabeled (Scope)')
         self.btn_save = QtWidgets.QPushButton('Save ROI')
         self.btn_delete = QtWidgets.QPushButton('Delete ROI')
@@ -495,7 +494,6 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         btn_bar.addWidget(self.btn_open_dashboard)
         btn_bar.addStretch(1)
         btn_bar.addWidget(self.btn_prev)
-        btn_bar.addWidget(self.btn_next)
         btn_bar.addWidget(self.btn_next_unlabeled)
         btn_bar.addWidget(self.btn_save)
         btn_bar.addWidget(self.btn_delete)
@@ -520,12 +518,14 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         print('[gui] Napari viewer created.')
         self.current_dir = None; self.file_list = []; self.file_index = -1
         self.image_layer = None; self.shapes = None
+        # History of confirmed saved ROI image paths (absolute)
+        self.save_history: list[Path] = []
+        self.history_index: int = -1
         self.btn_open.clicked.connect(self.open_image_dialog)
         self.btn_init_project.clicked.connect(self.open_import_project_dialog)
         self.btn_open_folder.clicked.connect(self.open_project_dialog)
         self.btn_open_dashboard.clicked.connect(self.open_dashboard)
-        self.btn_prev.clicked.connect(self.prev_image)
-        self.btn_next.clicked.connect(self.next_image)
+        self.btn_prev.clicked.connect(self.prev_saved)
         self.btn_next_unlabeled.clicked.connect(lambda: self.next_unlabeled_scope(from_start=False))
         self.btn_save.clicked.connect(self.confirm_save_roi)
         self.btn_delete.clicked.connect(self.confirm_delete_roi)
@@ -537,9 +537,9 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.sc_save2 = QtGui.QShortcut(QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.Save), self)
         self.sc_save2.activated.connect(self.confirm_save_roi)
         self.sc_next = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Right), self)
-        self.sc_next.activated.connect(self.next_image)
+        self.sc_next.activated.connect(lambda: self.next_unlabeled_scope(from_start=False))
         self.sc_prev = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Left), self)
-        self.sc_prev.activated.connect(self.prev_image)
+        self.sc_prev.activated.connect(self.prev_saved)
         self.sc_delete = QtGui.QShortcut(QtGui.QKeySequence('D'), self)
         self.sc_delete.activated.connect(self.confirm_delete_roi)
         self.sc_quit = QtGui.QShortcut(QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.Quit), self)
@@ -595,6 +595,10 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         act_open_dashboard = QtGui.QAction('Open Progress Dashboard', self)
         act_open_dashboard.triggered.connect(self.open_dashboard)
         proj_menu.addAction(act_open_dashboard)
+        # Also expose Resume under Project for visibility
+        act_resume2 = QtGui.QAction('Resume Last Session', self)
+        act_resume2.triggered.connect(self.resume_last_session)
+        proj_menu.addAction(act_resume2)
     def confirm_save_roi(self):
         reply = QtWidgets.QMessageBox.question(self, 'Confirm Save', 'Are you sure you want to save this ROI?',
                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
@@ -693,6 +697,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             'timestamp': time.time(),
             'total': len(self.file_list),
             'done': self.count_done_in_dir(self.current_dir),
+            'history': [str(p) for p in self.save_history][-500:],
+            'history_index': int(self.history_index),
         }
         # Write local session
         _write_json(self.local_session_path(self.current_dir), info)
@@ -782,6 +788,18 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         if pr:
             self.project_root = pr
             _merge_global_state({'last_project_root': str(pr.resolve())})
+        # Try loading session history for this directory
+        try:
+            sess = _read_json(self.local_session_path(directory)) or {}
+            hist = [Path(p) for p in sess.get('history', []) if p]
+            self.save_history = hist
+            hi = int(sess.get('history_index', len(self.save_history) - 1))
+            if -1 <= hi < len(self.save_history):
+                self.history_index = hi
+            else:
+                self.history_index = len(self.save_history) - 1
+        except Exception as e:
+            print(f'[gui] Warning: could not load history: {e}')
         # Determine starting index
         idx = 0
         # If a specific file is preferred (from resume)
@@ -892,7 +910,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
 
     def stop_and_save_session(self):
         self.persist_session()
-        QtWidgets.QMessageBox.information(self, 'Session Saved', 'Your session has been saved. You can safely close the app and resume later from File → Resume Last Session.')
+        QtWidgets.QMessageBox.information(self, 'Session Saved', 'Session saved. The app auto-resumes on next launch. To switch projects, use Project → Import Existing Project.')
     def load_image(self, path: Path):
         print(f'[gui] Loading image: {path}')
         # If a derived ROI output was selected, try to redirect to the original image
@@ -958,6 +976,13 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             except Exception as e:
                 print(f'[gui] Failed to preload ROI {roi_json}: {e}')
         # Update progress and persist current position
+        # Align history index with this image if present
+        try:
+            abs_p = path.resolve()
+            if abs_p in self.save_history:
+                self.history_index = self.save_history.index(abs_p)
+        except Exception:
+            pass
         self.update_progress_ui()
         self.persist_session()
     def step(self, delta: int):
@@ -1058,6 +1083,14 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f'Saved ROI: {roi_json.name}, {mask_tif.name}')
         QtWidgets.QMessageBox.information(self, 'Saved', f'ROI saved:\n{roi_json.name}\n{mask_tif.name}\nMeasurements appended.')
         self.update_progress_ui()
+        # Update history with this confirmed save
+        try:
+            abs_img = (img_dir / current_name).resolve()
+            if not self.save_history or self.save_history[-1] != abs_img:
+                self.save_history.append(abs_img)
+            self.history_index = len(self.save_history) - 1
+        except Exception:
+            pass
         self.persist_session()
         # Refresh dashboard if open
         try:
@@ -1067,6 +1100,21 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             pass
         if self.chk_auto_advance.isChecked():
             self.next_image()
+    def prev_saved(self):
+        if not self.save_history:
+            QtWidgets.QMessageBox.information(self, 'No History', 'No saved ROI history in this session yet.')
+            return
+        # Determine start idx
+        idx = self.history_index if self.history_index != -1 else len(self.save_history) - 1
+        target = None
+        for k in range(idx - 1, -1, -1):
+            p = self.save_history[k]
+            if p.exists():
+                target = p; self.history_index = k; break
+        if target is None:
+            QtWidgets.QMessageBox.information(self, 'Start Reached', 'No earlier saved ROI in history.')
+            return
+        self.load_image(target)
     def closeEvent(self, event: QtGui.QCloseEvent):
         try:
             self.persist_session()

@@ -152,8 +152,8 @@ Note on pixel size:
 ## 5) Keyboard Shortcuts
 
 - Save ROI: `S` or `Cmd+S`
-- Next image: Right Arrow
-- Previous image: Left Arrow
+- Next Unlabeled (Scope): Right Arrow
+- Previous Saved ROI: Left Arrow
 - Delete ROI: `D`
 - Quit: `Cmd+Q`
 
