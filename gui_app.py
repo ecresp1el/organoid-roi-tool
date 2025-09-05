@@ -125,7 +125,7 @@ class ProjectDashboard(QtWidgets.QDialog):
                 day_done = 0
                 unlabeled = []
                 # recurse one more level (times) then files, excluding derived ROI outputs
-                all_tifs = sorted(day_dir.rglob('*.tif')) + sorted(day_dir.rglob('*.tiff'))
+                all_tifs = _rglob_tiffs_case(day_dir)
                 tifs = [sub for sub in all_tifs if not is_derived_tiff_name(sub.name)]
                 for sub in tifs:
                     day_total += 1
@@ -358,8 +358,20 @@ def is_derived_tiff_name(name: str) -> bool:
         n.endswith('_roi_masked_cropped.tif') or n.endswith('_roi_masked_cropped.tiff')
     )
 
+def _list_tiffs_case(directory: Path) -> list[Path]:
+    try:
+        return sorted([p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in ('.tif', '.tiff')])
+    except Exception:
+        return []
+
+def _rglob_tiffs_case(directory: Path) -> list[Path]:
+    try:
+        return sorted([p for p in directory.rglob('*') if p.is_file() and p.suffix.lower() in ('.tif', '.tiff')])
+    except Exception:
+        return []
+
 def list_original_tiffs(directory: Path):
-    files = sorted(directory.glob('*.tif')) + sorted(directory.glob('*.tiff'))
+    files = _list_tiffs_case(directory)
     return [p for p in files if not is_derived_tiff_name(p.name)]
 
 # -----------------------------------------------------------------------------
@@ -572,7 +584,7 @@ def sorted_originals_under(root: Path) -> list[Path]:
         for time_dir in sorted([p for p in root.iterdir() if p.is_dir()], key=lambda p: parse_time_name(p.name)):
             images.extend(list_original_tiffs(time_dir))
         return images
-    # Fallback: just list originals directly in root
+    # Fallback: just list originals directly in root (case-insensitive)
     return list_original_tiffs(root)
 def load_image_any(path: Path):
     try:
@@ -1565,7 +1577,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         if not wells_dir.exists():
             return None
         for well_dir in sorted([p for p in wells_dir.iterdir() if p.is_dir()]):
-            all_tifs = sorted(well_dir.rglob('*.tif')) + sorted(well_dir.rglob('*.tiff'))
+            all_tifs = _rglob_tiffs_case(well_dir)
             for tif in [p for p in all_tifs if not is_derived_tiff_name(p.name)]:
                 base = tif.stem
                 if not (tif.parent / f"{base}_roi.json").exists():
