@@ -244,7 +244,41 @@ def parse_from_path(p: Path):
             return None, None, None
     return None, None, None
 def _load_with_tifffile(path: Path):
-    return tiff.imread(str(path))
+    """Robust TIFF reader using tifffile.
+
+    - Tries to stack all pages.
+    - If pages have mismatched shapes, falls back to stacking only pages that
+      match the first page's height/width.
+    - If still not stackable, returns the first page.
+    """
+    try:
+        return tiff.imread(str(path))
+    except Exception as e:
+        # Handle mismatched shapes between pages by manual reading
+        msg = str(e).lower()
+        if 'same shape' in msg or 'must have the same shape' in msg:
+            try:
+                with tiff.TiffFile(str(path)) as tf:
+                    first = tf.pages[0].asarray()
+                    frames = [first]
+                    h, w = first.shape[:2]
+                    for page in tf.pages[1:]:
+                        try:
+                            arr = page.asarray()
+                            if arr.shape[:2] == (h, w):
+                                frames.append(arr)
+                        except Exception:
+                            pass
+                    if len(frames) > 1:
+                        try:
+                            return np.stack(frames, axis=0)
+                        except Exception:
+                            return first
+                    return first
+            except Exception:
+                pass
+        # Re-raise for upstream fallback (Pillow) to take over
+        raise
 def _load_with_pillow(path: Path):
     img = Image.open(str(path))
     frames = []
@@ -258,12 +292,64 @@ def _load_with_pillow(path: Path):
         pass
     if len(frames) == 0:
         frames = [np.array(img)]
+    # Some multi-page TIFFs may have varying shapes; keep only frames
+    # matching the first frame's HxW before stacking.
+    if len(frames) > 1:
+        base = frames[0]
+        h, w = base.shape[:2]
+        frames = [f for f in frames if f.shape[:2] == (h, w)] or [base]
     arr = np.stack(frames, axis=0)
     if arr.ndim == 4:
         rgb = arr[..., :3].astype(np.float32)
         gray = (0.2989*rgb[...,0] + 0.5870*rgb[...,1] + 0.1140*rgb[...,2])
         arr = gray
     return arr
+
+def ensure_2d_image(img: np.ndarray) -> np.ndarray:
+    """Convert various TIFF shapes to a 2D grayscale image for display/ROI.
+
+    Heuristics:
+    - If 2D: return as-is
+    - If 3D and last dim is RGB/RGBA: convert to grayscale
+    - If 3D and first dim looks like a small stack (T/Z): max project axis 0
+    - If 3D and last dim is 1: squeeze channel
+    - If >3D: max project across non-spatial axes; then handle color if present
+    """
+    arr = np.asarray(img)
+    if arr.ndim == 2:
+        return arr
+    if arr.ndim == 3:
+        # Color images: (H,W,3 or 4)
+        if arr.shape[-1] in (3, 4):
+            rgb = arr[..., :3].astype(np.float32)
+            gray = 0.2989 * rgb[..., 0] + 0.5870 * rgb[..., 1] + 0.1140 * rgb[..., 2]
+            return gray
+        # Stack: (T,Z, H, W) → typically first dim is smaller than spatial
+        if arr.shape[0] < arr.shape[1] and arr.shape[0] < arr.shape[2]:
+            try:
+                return np.max(arr, axis=0)
+            except Exception:
+                return np.squeeze(arr)
+        # Single-channel last-dim
+        if arr.shape[-1] == 1:
+            return np.squeeze(arr, axis=-1)
+        # Fallback: max project first axis
+        try:
+            return np.max(arr, axis=0)
+        except Exception:
+            return np.squeeze(arr)
+    # Higher dimensions: reduce non-spatial axes by max
+    axes_sorted = np.argsort(arr.shape)
+    yx_axes = axes_sorted[-2:]
+    other_axes = tuple(ax for ax in range(arr.ndim) if ax not in yx_axes)
+    try:
+        reduced = np.max(arr, axis=other_axes)
+    except Exception:
+        reduced = np.squeeze(arr)
+    if reduced.ndim == 3 and reduced.shape[-1] in (3, 4):
+        rgb = reduced[..., :3].astype(np.float32)
+        return 0.2989 * rgb[..., 0] + 0.5870 * rgb[..., 1] + 0.1140 * rgb[..., 2]
+    return np.squeeze(reduced)
 def load_image_any(path: Path):
     try:
         img = _load_with_tifffile(path)
@@ -662,11 +748,10 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to read image:\n{e}')
             print(f'[gui] ERROR reading image: {e}')
             return
-        if img.ndim > 2:
-            try:
-                img = np.max(img, axis=0); print('[gui] Max projection applied.')
-            except Exception:
-                img = img.squeeze(); print('[gui] Squeeze fallback used.')
+        img = ensure_2d_image(img)
+        if img.ndim != 2:
+            img = np.squeeze(img)
+        print(f'[gui] Standardized to 2D for display. shape={img.shape}')
         self.viewer.layers.clear()
         low, high = float(np.percentile(img,2)), float(np.percentile(img,98))
         self.image_layer = self.viewer.add_image(img, name=path.name, contrast_limits=(low, high))
