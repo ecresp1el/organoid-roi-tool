@@ -486,7 +486,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.btn_save = QtWidgets.QPushButton('Save ROI')
         self.btn_delete = QtWidgets.QPushButton('Delete ROI')
         self.btn_stop = QtWidgets.QPushButton('Stop / Save Session')
-        self.chk_auto_advance = QtWidgets.QCheckBox('Auto-advance')
+        self.chk_auto_advance = QtWidgets.QCheckBox('Auto-advance (Scope)')
         self.chk_auto_advance.setChecked(True)
         btn_bar.addWidget(self.btn_open)
         btn_bar.addWidget(self.btn_init_project)
@@ -891,11 +891,13 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         images = self._scope_images()
         if not images:
             return False
+        # Work with resolved paths for stable comparisons
+        images_res = [p.resolve() for p in images]
         start_idx = 0
         if not from_start and self.image_layer is not None and self.current_dir is not None:
             try:
                 cur_path = (self.current_dir / self.image_layer.name).resolve()
-                start_idx = images.index(cur_path) + 1
+                start_idx = images_res.index(cur_path) + 1
             except Exception:
                 start_idx = 0
         n = len(images)
@@ -1099,7 +1101,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         except Exception:
             pass
         if self.chk_auto_advance.isChecked():
-            self.next_image()
+            # Advance within the active navigation scope (Well/Day/Project)
+            self.next_unlabeled_scope(from_start=False)
     def prev_saved(self):
         if not self.save_history:
             QtWidgets.QMessageBox.information(self, 'No History', 'No saved ROI history in this session yet.')
