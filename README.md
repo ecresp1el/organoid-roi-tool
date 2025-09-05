@@ -155,6 +155,35 @@ Preloading existing ROI:
 
 ---
 
+## 3A) Common Scenarios (Quick Flows)
+
+- New user, new project (first time)
+  - Click “Initialize Project (Reorganize)…”, pick your raw folder and a new project folder.
+  - When prompted, enter your name/initials (current user).
+  - Click “Validate Project” → expect “Project validation OK. No issues found.”
+  - Click “Open Dashboard”, select ALL or a specific well, then “Next Unlabeled (Scope)” to start.
+
+- Continue an existing project (same computer)
+  - Click “Import Project”, choose the project folder (contains `wells/`).
+  - The app validates automatically and resumes where you left off (from `.roi_session.json`).
+  - If you want to switch person, use Project → “Set Current User…”.
+
+- Continue an existing project (different computer / external drive)
+  - On the original computer: click “Migrate Project” once, then “Validate Project” (expect OK). Close the app.
+  - Copy the whole project folder to your drive/computer.
+  - On the new computer: click “Import Project”, select the folder. The app validates and resumes. If asked, pick your user or add a new one.
+
+- Add or switch user on a project
+  - Project → “Set Current User…”. Pick from the list or add a new name. Subsequent saves record that user.
+
+- Start over at the first unlabeled (optional)
+  - Delete `<project>/.roi_session.json`, then “Import Project” again. Or open the Dashboard, select ALL (project), and click “Next Unlabeled (Scope)”.
+
+- How progress is counted
+  - An image is “done” if a small `*_roi.json` exists next to it. The Dashboard totals use that rule.
+
+---
+
 ## 4) What Gets Saved
 
 When you save an ROI for `image.tif` in a folder, these files are written in the same folder:
