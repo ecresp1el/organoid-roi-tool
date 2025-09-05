@@ -75,6 +75,7 @@ Launch the app (mac):
 Open or initialize a project:
 - Initialize Project: Project → “Initialize Project (Reorganize)…” or click the “Initialize Project” button. Pick your raw folder (flat TIFFs) and a project output root. Optionally filter rows/columns and choose copy vs move. Files are organized under `wells/<well>/day_XX/HHhMMm/` and a `manifest.csv` is written.
 - Import Project: Click the “Import Project” button (or Project → “Import Existing Project…”). Select a project root that contains `wells/`. The app will jump to the first unlabeled image if available, and you can also open the Dashboard to navigate.
+- Open Dashboard: Click the “Open Dashboard” button (or Project → “Open Progress Dashboard”) to see project-wide progress and jump to the next unlabeled per well/day.
 - Open Image: Click “Open Image” for a one-off single file, or drag-and-drop a `.tif`/`.tiff`.
 
 If your image has multiple frames, the app automatically applies a maximum intensity projection so you see a 2D image.
