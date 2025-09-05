@@ -87,6 +87,13 @@ Set current user (project-local):
 
 If your image has multiple frames, the app automatically applies a maximum intensity projection so you see a 2D image.
 
+Behind the scenes (plain English):
+- The app treats the folder you select as a self‑contained “project”. Images live under `wells/<well>/day_XX/HHhMMm/`.
+- Progress is tracked by the presence of a small `*_roi.json` file next to each image. If it exists, that image is considered “done”.
+- Portable paths: `manifest.csv` and `roi_measurements.csv` use paths relative to the project so you can copy the folder anywhere (external drive, another computer) and keep going.
+- User and time: each save records who labeled the image and when (shown in CSV and in per‑image ROI JSON). There is also a simple `roi_activity_log.csv` with one line per save/delete.
+- Scope navigation: “Next Unlabeled (Scope)” moves through images within your chosen scope (Project / Well / Day). The default scope is the current Well.
+
 Adjust how it looks:
 - The contrast is auto‑stretched to the 2nd–98th percentile; you can tweak layer contrast in Napari if needed.
 - Use the mouse wheel or trackpad to zoom; drag to pan.
@@ -104,9 +111,9 @@ Delete the ROI:
 - Click “Delete ROI” (or press D), then confirm.
 
 Browse images:
-- Use the Prev / Next buttons, or press Left/Right arrow keys.
-- “Next Unlabeled (Scope)” advances to the next image without a saved ROI within the current navigation scope.
-- Default scope when working in a project is the current Well (across its days and times). You can switch scope via the Project Dashboard by selecting ALL (project), a specific well, or a day before clicking “Next Unlabeled (Scope)”. In the main window, the active scope is shown next to the progress bar.
+- “Next Unlabeled (Scope)” advances to the next image without a saved ROI within the current navigation scope (Right Arrow shortcut).
+- “Prev Saved ROI” jumps back through the history of images you’ve saved in this session (Left Arrow shortcut).
+- Default scope when working in a project is the current Well (across its days and times). You can switch scope via the Project Dashboard by selecting ALL (project), a specific well, or a day before clicking “Next Unlabeled (Scope)”. The active scope is shown next to the progress bar.
 - Use the Project Dashboard for project-wide navigation across wells/days.
 - Note: Navigation ignores derived ROI outputs (`*_mask.tif`, `*_roi_masked*.tif`) so you only step through original images.
 
@@ -118,7 +125,7 @@ Session & progress:
 Project‑wide progress dashboard:
 - Open via Project → “Open Progress Dashboard” or the “Open Dashboard” button. The project root can be set from there or is inferred when you Import/Initialize a project.
 - Shows totals per well and per day: Done, Total, and %.
-- “Next Unlabeled (Scope)” uses the selected row (ALL/well/day) as the scope and opens the next image without a saved ROI in that group. The main window’s “Next Unlabeled (Scope)” then continues within the same scope.
+- “Next Unlabeled (Scope)” uses the selected row (ALL/well/day) as the scope and opens the next image without a saved ROI in that group. The main window then continues within the same scope.
 - “Refresh” rescans; it also auto‑refreshes after ROI saves/deletes.
 
 Initialize project (inside the GUI):
@@ -136,6 +143,12 @@ Portability & collaboration:
 Migrate an existing project for portability:
 - Project → “Migrate Project for Portability…” updates `manifest.csv` to include relative paths (`new_rel`) and adds `image_relpath`, `user`, and `timestamp_iso` columns to measurement CSVs (leaves past user/timestamp blank if unknown).
 - The migrator also asks if you’re one of the previous users; you can pick from the list or add a new one. Your choice is saved in `.roi_project.json` as the current user.
+
+Moving a project to another drive/computer (non‑programmer steps):
+- In the app, open your project and click “Migrate Project” once (adds portable paths and sets/chooses the user).
+- Click “Validate Project” and confirm you see “Project validation OK. No issues found.”
+- Close the app and copy the entire project folder (includes `wells/`, `manifest.csv`, `roi_measurements.csv`, `.roi_project.json`, `.roi_session.json`, per‑image ROI JSONs) to your drive/computer.
+- On the other machine, click “Import Project”, pick the folder. The app validates automatically, prompts for user if needed, and resumes where you left off.
 
 Preloading existing ROI:
 - If a matching ROI JSON file is already present for the image, the app auto‑loads it so you can review or edit.
@@ -156,12 +169,17 @@ Measurements CSVs (upsert one row per image):
 - If your image path looks like `<project-root>/wells/...`, a project CSV is also updated: `<project-root>/roi_measurements.csv`
 
 Each row includes:
-- image_path, well, day, time
+- image_relpath (portable key), image_path (absolute, for convenience)
+- well, day, time
 - area_px, perimeter_px, centroid_yx
 - pixel_size_um (if readable from TIFF tags)
+- user (who saved), timestamp_iso (when saved)
 
 Note on pixel size:
 - The app tries to read pixel size from the TIFF XResolution tag and converts to micrometers per pixel. If missing, the field is left blank in the CSV.
+
+Activity log (project-level):
+- `<project>/roi_activity_log.csv` records one line per save/delete with: timestamp_iso, user, image_relpath, image_path, action (save/delete), well, day, time.
 
 ---
 
@@ -203,10 +221,15 @@ Images won’t open or look wrong
 - Multi‑frame images are max‑projected to 2D for ROI drawing.
 
 No ROI is saved / file missing
-- After saving, the app checks that files were written. If something’s missing, it shows an error. Ensure you have write permission to the folder.
+- The app writes a mask TIFF and a small ROI JSON next to your image. If it reports a save problem, ensure you have write permission to the folder and enough disk space.
 
 CSV not updating
-- The tool “upserts” one row per image (no duplicates). Close the CSV in Excel while saving from the app.
+- The tool “upserts” one row per image using `image_relpath` so there are no duplicates. Close the CSV in Excel while saving from the app.
+
+“No unlabeled images found” on a new project
+- Make sure you clicked “Import Project” (or used Initialize Project) so the app knows your project root.
+- Check the scope label next to the progress bar. If it’s not “Project (…)” or “Well (…)”, open the Dashboard, select “ALL” or a specific well, then click “Next Unlabeled (Scope)”.
+- Verify your images have `.tif` or `.tiff` extensions. The app detects both in any letter case (e.g., `.TIF`).
 
 ---
 
