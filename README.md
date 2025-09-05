@@ -111,6 +111,13 @@ Project‑wide progress dashboard:
 - “Next Unlabeled” in each row lets you jump straight to the next image without a saved ROI in that group.
 - Use “Refresh” to rescan after making changes; it also auto‑refreshes after you save an ROI.
 
+Import project (inside the GUI):
+- Use Project → “Import Project (Reorganize)…”.
+- Choose a raw input folder (flat TIFFs) and an output project root.
+- Optional filters: rows (A–H), min column, copy vs move, dry run.
+- The tool organizes files as `wells/<well>/day_XX/HHhMMm/` and appends to `<project>/manifest.csv`.
+- After completion, set the project root and optionally open the progress dashboard.
+
 Preloading existing ROI:
 - If a matching ROI JSON file is already present for the image, the app auto‑loads it so you can review or edit.
 

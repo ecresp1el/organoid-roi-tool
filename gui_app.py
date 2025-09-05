@@ -420,6 +420,9 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         act_set_root = QtGui.QAction('Set Project Root…', self)
         act_set_root.triggered.connect(self.set_project_root_dialog)
         proj_menu.addAction(act_set_root)
+        act_import = QtGui.QAction('Import Project (Reorganize)…', self)
+        act_import.triggered.connect(self.open_import_project_dialog)
+        proj_menu.addAction(act_import)
         act_open_dashboard = QtGui.QAction('Open Progress Dashboard', self)
         act_open_dashboard.triggered.connect(self.open_dashboard)
         proj_menu.addAction(act_open_dashboard)
@@ -828,6 +831,132 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             return
         self.dashboard = ProjectDashboard(self, pr)
         self.dashboard.show()
+
+    # ---------------------------
+    # Import Project (wrap reorganize.py)
+    # ---------------------------
+    def open_import_project_dialog(self):
+        dlg = ImportProjectDialog(self)
+        dlg.exec()
+
+class ImportProjectDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Import Project (Reorganize Raw Files)')
+        self.resize(700, 520)
+        v = QtWidgets.QVBoxLayout(self)
+        form = QtWidgets.QGridLayout()
+        self.ed_raw = QtWidgets.QLineEdit()
+        self.btn_raw = QtWidgets.QPushButton('Browse…')
+        self.ed_out = QtWidgets.QLineEdit()
+        self.btn_out = QtWidgets.QPushButton('Browse…')
+        self.sp_min_col = QtWidgets.QSpinBox(); self.sp_min_col.setRange(1, 12); self.sp_min_col.setValue(1)
+        self.ed_rows = QtWidgets.QLineEdit('ABCDEFGH')
+        self.chk_copy = QtWidgets.QCheckBox('Copy files (default: move)')
+        self.chk_dry = QtWidgets.QCheckBox('Dry run (no changes)')
+        r = 0
+        form.addWidget(QtWidgets.QLabel('Raw folder (flat):'), r, 0)
+        form.addWidget(self.ed_raw, r, 1)
+        form.addWidget(self.btn_raw, r, 2); r += 1
+        form.addWidget(QtWidgets.QLabel('Project root (output):'), r, 0)
+        form.addWidget(self.ed_out, r, 1)
+        form.addWidget(self.btn_out, r, 2); r += 1
+        form.addWidget(QtWidgets.QLabel('Rows (A–H):'), r, 0)
+        form.addWidget(self.ed_rows, r, 1); r += 1
+        form.addWidget(QtWidgets.QLabel('Min column:'), r, 0)
+        form.addWidget(self.sp_min_col, r, 1); r += 1
+        form.addWidget(self.chk_copy, r, 1); r += 1
+        form.addWidget(self.chk_dry, r, 1); r += 1
+        v.addLayout(form)
+        self.log = QtWidgets.QTextEdit(); self.log.setReadOnly(True)
+        v.addWidget(self.log, 1)
+        buttons = QtWidgets.QHBoxLayout()
+        self.btn_run = QtWidgets.QPushButton('Run Import')
+        self.btn_close = QtWidgets.QPushButton('Close')
+        buttons.addStretch(1)
+        buttons.addWidget(self.btn_run)
+        buttons.addWidget(self.btn_close)
+        v.addLayout(buttons)
+        self.btn_close.clicked.connect(self.close)
+        self.btn_raw.clicked.connect(self.pick_raw)
+        self.btn_out.clicked.connect(self.pick_out)
+        self.btn_run.clicked.connect(self.run)
+        # Suggest defaults based on parent state
+        try:
+            st = _read_json(_global_state_path()) or {}
+            last_pr = st.get('last_project_root')
+            if last_pr:
+                self.ed_out.setText(last_pr)
+        except Exception:
+            pass
+        self.thread = None
+
+    def pick_raw(self):
+        d = QtWidgets.QFileDialog.getExistingDirectory(self, 'Pick Raw Folder (flat)')
+        if d:
+            self.ed_raw.setText(d)
+
+    def pick_out(self):
+        d = QtWidgets.QFileDialog.getExistingDirectory(self, 'Pick Project Root (output)')
+        if d:
+            self.ed_out.setText(d)
+
+    def append_log(self, msg: str):
+        self.log.append(msg)
+        self.log.ensureCursorVisible()
+
+    def run(self):
+        raw = self.ed_raw.text().strip()
+        out = self.ed_out.text().strip()
+        if not raw or not out:
+            QtWidgets.QMessageBox.information(self, 'Missing', 'Please select both raw and output folders.')
+            return
+        rows = self.ed_rows.text().strip() or 'ABCDEFGH'
+        min_col = int(self.sp_min_col.value())
+        copy = self.chk_copy.isChecked()
+        dry = self.chk_dry.isChecked()
+        self.log.clear()
+        self.append_log('[import] Starting...')
+        # Run in a thread to keep UI responsive
+        self.thread = ImportWorker(raw, out, copy, dry, min_col, rows)
+        self.thread.sig_log.connect(self.append_log)
+        self.thread.sig_done.connect(self.on_done)
+        self.btn_run.setEnabled(False)
+        self.thread.start()
+
+    def on_done(self, ok: bool, result: dict | None, error: str | None):
+        self.btn_run.setEnabled(True)
+        if not ok:
+            QtWidgets.QMessageBox.critical(self, 'Import Failed', error or 'Unknown error')
+            return
+        self.append_log('[import] Completed.')
+        # Update parent project root and offer to open dashboard
+        try:
+            out_root = Path(result.get('out_root'))
+            parent = self.parent() if isinstance(self.parent(), OrganoidROIApp) else None
+            if parent is not None:
+                parent.project_root = out_root
+                _merge_global_state({'last_project_root': str(out_root.resolve())})
+                if QtWidgets.QMessageBox.question(self, 'Open Dashboard?', 'Import complete. Open project dashboard?', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.Yes:
+                    parent.open_dashboard()
+        except Exception:
+            pass
+
+class ImportWorker(QtCore.QThread):
+    sig_log = QtCore.Signal(str)
+    sig_done = QtCore.Signal(bool, dict, str)
+    def __init__(self, raw, out, copy, dry, min_col, rows):
+        super().__init__()
+        self.raw = raw; self.out = out; self.copy = copy; self.dry = dry; self.min_col = min_col; self.rows = rows
+    def run(self):
+        try:
+            # Import here to avoid top-level dependency at module import
+            import reorganize as r
+            result = r.organize(self.raw, self.out, copy=self.copy, dry_run=self.dry, min_col=self.min_col, rows=self.rows, log=lambda m: self.sig_log.emit(m))
+            self.sig_done.emit(True, result, '')
+        except Exception as e:
+            self.sig_log.emit(f'[import] ERROR: {e}')
+            self.sig_done.emit(False, None, str(e))
 def main():
     print('[gui] Launching Qt app...')
     app = QtWidgets.QApplication(sys.argv)
