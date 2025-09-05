@@ -157,7 +157,7 @@ Note on pixel size:
 - Delete ROI: `D`
 - Quit: `Cmd+Q`
 
-“Auto‑advance” toggle moves to the next image automatically after a successful save.
+ “Auto‑advance (Scope)” moves to the next unlabeled image in the current scope after a successful save.
 
 ---
 
