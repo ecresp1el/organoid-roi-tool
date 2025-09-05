@@ -76,6 +76,11 @@ Open or initialize a project:
 - Initialize Project: Project → “Initialize Project (Reorganize)…” or click the “Initialize Project” button. Pick your raw folder (flat TIFFs) and a project output root. Optionally filter rows/columns and choose copy vs move. Files are organized under `wells/<well>/day_XX/HHhMMm/` and a `manifest.csv` is written.
 - Import Project: Click the “Import Project” button (or Project → “Import Existing Project…”). Select a project root that contains `wells/`. The app will jump to the first unlabeled image if available, and you can also open the Dashboard to navigate.
 - Open Dashboard: Click the “Open Dashboard” button (or Project → “Open Progress Dashboard”) to see project-wide progress and jump to the next unlabeled per well/day.
+
+Set current user (project-local):
+- On first import/initialize, you’ll be prompted to enter your name/initials; this is stored in `<project>/.roi_project.json` and shown in the toolbar.
+- Change anytime via Project → “Set Current User…”.
+- Each save logs `user` + `timestamp` into ROI JSON and `roi_measurements.csv`, and appends an entry to `<project>/roi_activity_log.csv` (action log).
 - Open Image: Click “Open Image” for a one-off single file, or drag-and-drop a `.tif`/`.tiff`.
 
 If your image has multiple frames, the app automatically applies a maximum intensity projection so you see a 2D image.
@@ -120,6 +125,15 @@ Initialize project (inside the GUI):
 - Optional filters: rows (A–H), min column, copy vs move, dry run.
 - Organizes files as `wells/<well>/day_XX/HHhMMm/` and appends to `<project>/manifest.csv`.
 - After completion, you can open the progress dashboard immediately.
+
+Portability & collaboration:
+- Project folder is self-contained: `wells/`, `manifest.csv`, `roi_measurements.csv`, per-image ROI JSONs, plus `.roi_project.json` (user list/current user) and `.roi_session.json` (last image/scope).
+- Paths in `manifest.csv` and `roi_measurements.csv` are stored relative to project root so you can move the folder across machines/drives.
+- The app auto-resumes from `.roi_session.json` when importing a project. Use “Set Current User…” to switch users between sessions.
+
+Migrate an existing project for portability:
+- Project → “Migrate Project for Portability…” updates `manifest.csv` to include relative paths (`new_rel`) and adds `image_relpath`, `user`, and `timestamp_iso` columns to measurement CSVs (leaves past user/timestamp blank if unknown).
+- The migrator also asks if you’re one of the previous users; you can pick from the list or add a new one. Your choice is saved in `.roi_project.json` as the current user.
 
 Preloading existing ROI:
 - If a matching ROI JSON file is already present for the image, the app auto‑loads it so you can review or edit.

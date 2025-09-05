@@ -379,6 +379,34 @@ def get_current_user() -> str:
 def project_session_path(project_root: Path) -> Path:
     return project_root / '.roi_session.json'
 
+def project_meta_path(project_root: Path) -> Path:
+    return project_root / '.roi_project.json'
+
+def load_project_meta(project_root: Path) -> dict:
+    p = project_meta_path(project_root)
+    meta = _read_json(p) or {}
+    meta.setdefault('users', [])
+    meta.setdefault('current_user', None)
+    meta.setdefault('created_at', time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime()))
+    return meta
+
+def save_project_meta(project_root: Path, meta: dict):
+    _write_json(project_meta_path(project_root), meta)
+
+def append_project_log(project_root: Path, row: dict):
+    try:
+        log_path = project_root / 'roi_activity_log.csv'
+        import csv
+        exists = log_path.exists()
+        with log_path.open('a', newline='') as f:
+            cols = ['timestamp_iso','user','image_relpath','image_path','action','well','day','time']
+            w = csv.DictWriter(f, fieldnames=cols)
+            if not exists:
+                w.writeheader()
+            w.writerow({k: row.get(k, '') for k in cols})
+    except Exception as e:
+        print(f'[gui] Warning: failed to append project log: {e}')
+
 def is_subpath(child: Path, parent: Path) -> bool:
     try:
         child.resolve().relative_to(parent.resolve())
@@ -537,9 +565,11 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.scope_label = QtWidgets.QLabel('Scope: Folder')
+        self.user_label = QtWidgets.QLabel('User: <unset>')
         prog_bar_row.addWidget(self.progress_label)
         prog_bar_row.addWidget(self.progress_bar)
         prog_bar_row.addWidget(self.scope_label)
+        prog_bar_row.addWidget(self.user_label)
         layout.addLayout(prog_bar_row)
 
         print('[gui] Napari viewer created.')
@@ -548,6 +578,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         # History of confirmed saved ROI image paths (absolute)
         self.save_history: list[Path] = []
         self.history_index: int = -1
+        # Current user (per-project); falls back to OS user
+        self.current_user: str | None = None
         self.btn_open.clicked.connect(self.open_image_dialog)
         self.btn_init_project.clicked.connect(self.open_import_project_dialog)
         self.btn_open_folder.clicked.connect(self.open_project_dialog)
@@ -613,6 +645,12 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         act_set_root = QtGui.QAction('Set Project Root…', self)
         act_set_root.triggered.connect(self.set_project_root_dialog)
         proj_menu.addAction(act_set_root)
+        act_set_user = QtGui.QAction('Set Current User…', self)
+        act_set_user.triggered.connect(self.set_current_user_dialog)
+        proj_menu.addAction(act_set_user)
+        act_migrate = QtGui.QAction('Migrate Project for Portability…', self)
+        act_migrate.triggered.connect(self.open_migrate_project_dialog)
+        proj_menu.addAction(act_migrate)
         act_init = QtGui.QAction('Initialize Project (Reorganize)…', self)
         act_init.triggered.connect(self.open_import_project_dialog)
         proj_menu.addAction(act_init)
@@ -692,6 +730,30 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             try:
                 if self.dashboard is not None:
                     self.dashboard.refresh()
+            except Exception:
+                pass
+            # Append delete action to project activity log
+            try:
+                if self.project_root and current_file:
+                    proj_root = self.project_root.resolve()
+                    image_abs = (self.current_dir / current_file.name).resolve()
+                    image_rel = None
+                    try:
+                        image_rel = str(image_abs.relative_to(proj_root))
+                    except Exception:
+                        pass
+                    if image_rel:
+                        timestamp_iso = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())
+                        user = self.current_user or get_current_user()
+                        w, d, t = parse_from_path(self.current_dir / current_file.name)
+                        append_project_log(proj_root, {
+                            'timestamp_iso': timestamp_iso,
+                            'user': user,
+                            'image_relpath': image_rel,
+                            'image_path': str(image_abs),
+                            'action': 'delete',
+                            'well': w, 'day': d, 'time': t,
+                        })
             except Exception:
                 pass
     def dragEnterEvent(self, event):
@@ -888,6 +950,68 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             pass
         self.scope_label.setText(f'Scope: {label}')
         print(f'[gui] Navigation scope set to {scope_type} root={root}')
+
+    # ---------------------------
+    # User management per project
+    # ---------------------------
+    def prompt_for_user_if_needed(self, project_root: Path):
+        try:
+            meta = load_project_meta(project_root)
+            cur = meta.get('current_user')
+            if not cur:
+                # Default to OS user; ask to confirm or change
+                suggested = get_current_user()
+                name, ok = QtWidgets.QInputDialog.getText(self, 'Set Current User', 'Enter your name or initials:', text=suggested)
+                if not ok or not name.strip():
+                    name = suggested
+                name = name.strip()
+                # Update meta
+                if name and name not in meta['users']:
+                    meta['users'].append(name)
+                meta['current_user'] = name
+                save_project_meta(project_root, meta)
+                cur = name
+            self.current_user = cur
+            self.user_label.setText(f'User: {cur}')
+        except Exception as e:
+            print(f'[gui] Warning: failed to set user: {e}')
+            self.current_user = get_current_user()
+            self.user_label.setText(f'User: {self.current_user}')
+
+    def set_current_user_dialog(self):
+        if not self.project_root:
+            QtWidgets.QMessageBox.information(self, 'No Project', 'Set or import a project first.')
+            return
+        meta = load_project_meta(self.project_root)
+        users = meta.get('users', [])
+        current = meta.get('current_user') or ''
+        # Simple dialog: if users exist, ask to pick or enter a new one
+        if users:
+            items = users + ['<Add new…>']
+            item, ok = QtWidgets.QInputDialog.getItem(self, 'Select User', 'Choose current user:', items, editable=False)
+            if not ok:
+                return
+            if item == '<Add new…>':
+                text, ok2 = QtWidgets.QInputDialog.getText(self, 'Add User', 'Enter new user name:')
+                if not ok2 or not text.strip():
+                    return
+                name = text.strip()
+                if name not in users:
+                    users.append(name)
+                meta['current_user'] = name
+            else:
+                meta['current_user'] = item
+        else:
+            text, ok = QtWidgets.QInputDialog.getText(self, 'Set Current User', 'Enter user name:')
+            if not ok or not text.strip():
+                return
+            name = text.strip()
+            users = [name]
+            meta['users'] = users
+            meta['current_user'] = name
+        save_project_meta(self.project_root, meta)
+        self.current_user = meta['current_user']
+        self.user_label.setText(f'User: {self.current_user}')
 
     def _scope_root_for_current(self) -> Path:
         if self.nav_scope_type == 'folder' or self.nav_scope_root is None:
@@ -1121,7 +1245,7 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             _merge_global_state({'last_project_root': str(proj_root.resolve())})
         px_um = read_pixel_size_um(img_dir / current_name)
         # Attribution and portability fields
-        user = get_current_user()
+        user = self.current_user or get_current_user()
         timestamp_iso = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())
         image_abs = (img_dir / current_name).resolve()
         image_rel = None
@@ -1147,6 +1271,19 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             proj_csv = proj_root / 'roi_measurements.csv'
             upsert_row(proj_csv, row)
             print(f'[gui] Upserted measurements into {proj_csv}')
+        # Append to project activity log
+        try:
+            if proj_root and image_rel:
+                append_project_log(proj_root, {
+                    'timestamp_iso': timestamp_iso,
+                    'user': user,
+                    'image_relpath': image_rel,
+                    'image_path': str(image_abs),
+                    'action': 'save',
+                    'well': well, 'day': day, 'time': time_,
+                })
+        except Exception:
+            pass
         # Enrich ROI JSON with attribution and relative path for portability
         try:
             extra = {'user': user, 'timestamp_iso': timestamp_iso}
@@ -1240,6 +1377,8 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
         self.project_root = pr
         _merge_global_state({'last_project_root': str(pr.resolve())})
         self.set_nav_scope('project', pr)
+        # Ensure user is set at project level
+        self.prompt_for_user_if_needed(pr)
         # Try to resume from project-local session
         sess = _read_json(project_session_path(pr)) or {}
         last_rel = sess.get('last_file_relpath')
@@ -1258,6 +1397,10 @@ class OrganoidROIApp(QtWidgets.QMainWindow):
             except Exception:
                 pass
         self.open_dashboard()
+
+    def open_migrate_project_dialog(self):
+        dlg = MigrateProjectDialog(self)
+        dlg.exec()
 
     def find_first_unlabeled_in_project(self, project_root: Path) -> Path | None:
         wells_dir = project_root / 'wells'
@@ -1370,6 +1513,7 @@ class ImportProjectDialog(QtWidgets.QDialog):
                 parent.project_root = out_root
                 _merge_global_state({'last_project_root': str(out_root.resolve())})
                 parent.set_nav_scope('project', out_root)
+                parent.prompt_for_user_if_needed(out_root)
                 if QtWidgets.QMessageBox.question(self, 'Open Dashboard?', 'Import complete. Open project dashboard?', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.Yes:
                     parent.open_dashboard()
         except Exception:
@@ -1390,6 +1534,200 @@ class ImportWorker(QtCore.QThread):
         except Exception as e:
             self.sig_log.emit(f'[import] ERROR: {e}')
             self.sig_done.emit(False, None, str(e))
+
+class MigrateProjectDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Migrate Project for Portability')
+        self.resize(720, 520)
+        v = QtWidgets.QVBoxLayout(self)
+        form = QtWidgets.QGridLayout()
+        self.ed_proj = QtWidgets.QLineEdit()
+        self.btn_proj = QtWidgets.QPushButton('Browse…')
+        r = 0
+        form.addWidget(QtWidgets.QLabel('Project root:'), r, 0)
+        form.addWidget(self.ed_proj, r, 1)
+        form.addWidget(self.btn_proj, r, 2); r += 1
+        v.addLayout(form)
+        self.log = QtWidgets.QTextEdit(); self.log.setReadOnly(True)
+        v.addWidget(self.log, 1)
+        hb = QtWidgets.QHBoxLayout(); hb.addStretch(1)
+        self.btn_run = QtWidgets.QPushButton('Run Migration')
+        self.btn_close = QtWidgets.QPushButton('Close')
+        hb.addWidget(self.btn_run); hb.addWidget(self.btn_close)
+        v.addLayout(hb)
+        self.btn_proj.clicked.connect(self.pick_project)
+        self.btn_close.clicked.connect(self.close)
+        self.btn_run.clicked.connect(self.run_migration)
+        # seed with parent's project root
+        try:
+            parent = self.parent() if isinstance(self.parent(), OrganoidROIApp) else None
+            if parent and parent.project_root:
+                self.ed_proj.setText(str(parent.project_root))
+        except Exception:
+            pass
+
+    def append_log(self, msg: str):
+        self.log.append(msg)
+        self.log.ensureCursorVisible()
+
+    def pick_project(self):
+        d = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Project Root (with wells/)')
+        if d:
+            self.ed_proj.setText(d)
+
+    def run_migration(self):
+        pr_text = self.ed_proj.text().strip()
+        if not pr_text:
+            QtWidgets.QMessageBox.information(self, 'Missing', 'Please select a project root.')
+            return
+        pr = Path(pr_text)
+        if not (pr / 'wells').exists():
+            QtWidgets.QMessageBox.warning(self, 'Invalid Project', 'Selected folder does not contain wells/.')
+            return
+        self.log.clear()
+        self.append_log(f'[migrate] Project: {pr}')
+        # 1) Migrate manifest.csv
+        self.migrate_manifest(pr)
+        # 2) Migrate roi_measurements.csv at project root
+        self.migrate_measurements(pr / 'roi_measurements.csv', pr)
+        # 3) Migrate any folder-level roi_measurements.csv under wells
+        for csvp in pr.rglob('roi_measurements.csv'):
+            if csvp.parent == pr:
+                continue
+            self.migrate_measurements(csvp, pr)
+        # 4) Ensure project users / set current user
+        self.migrate_users(pr)
+        # 5) Finish
+        self.append_log('[migrate] Done.')
+        # Offer to set parent app state
+        try:
+            parent = self.parent() if isinstance(self.parent(), OrganoidROIApp) else None
+            if parent is not None:
+                parent.project_root = pr
+                parent.set_nav_scope('project', pr)
+                parent.prompt_for_user_if_needed(pr)
+                parent.open_dashboard()
+        except Exception:
+            pass
+
+    def migrate_manifest(self, project_root: Path):
+        manifest = project_root / 'manifest.csv'
+        if not manifest.exists():
+            self.append_log('[migrate] No manifest.csv found; skipping.')
+            return
+        try:
+            df = pd.read_csv(manifest)
+        except Exception as e:
+            self.append_log(f'[migrate] ERROR reading manifest: {e}')
+            return
+        changed = False
+        # Ensure new_rel column
+        if 'new_rel' not in df.columns:
+            df['new_rel'] = ''
+            changed = True
+        # Fill new_rel when missing/empty
+        for i, row in df.iterrows():
+            rel = str(row.get('new_rel')) if 'new_rel' in df.columns else ''
+            if rel and rel != 'nan' and rel != 'None':
+                continue
+            new_path = row.get('new_path')
+            if isinstance(new_path, str) and new_path:
+                p = Path(new_path)
+                try:
+                    relp = str(p.resolve().relative_to(project_root.resolve()))
+                    df.at[i, 'new_rel'] = relp
+                    changed = True
+                except Exception:
+                    # Try to infer from known wells structure
+                    try:
+                        widx = p.parts.index('wells')
+                        relp = str(Path(*p.parts[widx:]))
+                        df.at[i, 'new_rel'] = relp
+                        changed = True
+                    except Exception:
+                        pass
+        if changed:
+            try:
+                df.to_csv(manifest, index=False)
+                self.append_log('[migrate] Updated manifest.csv (added/fixed new_rel).')
+            except Exception as e:
+                self.append_log(f'[migrate] ERROR writing manifest: {e}')
+        else:
+            self.append_log('[migrate] Manifest already portable (new_rel present).')
+
+    def migrate_measurements(self, csv_path: Path, project_root: Path):
+        if not csv_path.exists():
+            return
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as e:
+            self.append_log(f'[migrate] ERROR reading {csv_path}: {e}')
+            return
+        changed = False
+        cols_needed = ['image_relpath', 'user', 'timestamp_iso']
+        for c in cols_needed:
+            if c not in df.columns:
+                df[c] = ''
+                changed = True
+        # Fill image_relpath from image_path when possible
+        if 'image_relpath' in df.columns:
+            for i, row in df.iterrows():
+                rel = str(row.get('image_relpath'))
+                if rel and rel != 'nan' and rel != 'None':
+                    continue
+                ip = row.get('image_path')
+                if isinstance(ip, str) and ip:
+                    p = Path(ip)
+                    try:
+                        df.at[i, 'image_relpath'] = str(p.resolve().relative_to(project_root.resolve()))
+                        changed = True
+                    except Exception:
+                        try:
+                            widx = p.parts.index('wells')
+                            relp = str(Path(*p.parts[widx:]))
+                            df.at[i, 'image_relpath'] = relp
+                            changed = True
+                        except Exception:
+                            pass
+        if changed:
+            try:
+                df.to_csv(csv_path, index=False)
+                self.append_log(f'[migrate] Updated {csv_path} (added rel paths / fields).')
+            except Exception as e:
+                self.append_log(f'[migrate] ERROR writing {csv_path}: {e}')
+
+    def migrate_users(self, project_root: Path):
+        meta = load_project_meta(project_root)
+        users = meta.get('users', [])
+        current = meta.get('current_user')
+        # Ask if the current person is one of previous users
+        if users:
+            items = users + ['<Add new…>']
+            item, ok = QtWidgets.QInputDialog.getItem(self, 'Select User', 'Are you one of the previous users?', items, editable=False)
+            if not ok:
+                return
+            if item == '<Add new…>':
+                text, ok2 = QtWidgets.QInputDialog.getText(self, 'Add User', 'Enter new user name:')
+                if not ok2 or not text.strip():
+                    return
+                name = text.strip()
+                if name not in users:
+                    users.append(name)
+                meta['current_user'] = name
+            else:
+                meta['current_user'] = item
+        else:
+            # No previous users; add current as new
+            suggested = get_current_user()
+            text, ok = QtWidgets.QInputDialog.getText(self, 'Set Current User', 'Enter your name or initials:', text=suggested)
+            if not ok or not text.strip():
+                return
+            name = text.strip()
+            meta['users'] = [name]
+            meta['current_user'] = name
+        save_project_meta(project_root, meta)
+        self.append_log(f"[migrate] Current user set to: {meta.get('current_user')}")
 def main():
     print('[gui] Launching Qt app...')
     app = QtWidgets.QApplication(sys.argv)
