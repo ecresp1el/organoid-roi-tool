@@ -226,7 +226,10 @@ class DCXBrowserApp(tk.Tk):
         spacer.pack(side=tk.LEFT, expand=True)
 
         self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 12))
-        self.fig.tight_layout()
+        self.cbar_axes = [
+            self.fig.add_axes([0.12, 0.94, 0.35, 0.018]),  # raw
+            self.fig.add_axes([0.57, 0.94, 0.35, 0.018]),  # otsu
+        ]
         self.canvas = FigureCanvasTkAgg(self.fig, master=content)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
@@ -385,14 +388,14 @@ class DCXBrowserApp(tk.Tk):
         ax_overlay = self.axes[1, 1]
 
         ax_raw.clear()
-        ax_raw.imshow(raw_zoom, cmap="gray")
+        im_raw = ax_raw.imshow(raw_zoom, cmap="gray", vmin=0.0, vmax=1.0)
         ax_raw.set_title(f"Raw ({suffix})")
         ax_raw.axis("off")
         ax_raw.set_anchor("C")
         self._draw_scale_bar(ax_raw, raw_zoom.shape[:2])
 
         ax_seg.clear()
-        ax_seg.imshow(seg_zoom, cmap="magma")
+        im_seg = ax_seg.imshow(seg_zoom, cmap="magma", vmin=0.0, vmax=1.0)
         ax_seg.set_title(f"Otsu normalization ({suffix})")
         ax_seg.axis("off")
         ax_seg.set_anchor("C")
@@ -405,12 +408,20 @@ class DCXBrowserApp(tk.Tk):
         ax_mask.set_anchor("C")
 
         ax_overlay.clear()
-        ax_overlay.imshow(seg_zoom, cmap="magma")
+        ax_overlay.imshow(seg_zoom, cmap="magma", vmin=0.0, vmax=1.0)
         ax_overlay.imshow(np.ma.masked_where(boundary_zoom == 0, boundary_zoom), cmap="cool", alpha=0.6)
         ax_overlay.set_title(f"Mask on Otsu ({suffix})")
         ax_overlay.axis("off")
         ax_overlay.set_anchor("C")
         self._draw_scale_bar(ax_overlay, seg_zoom.shape[:2])
+
+        cbar_raw_ax, cbar_seg_ax = self.cbar_axes
+        for cax in self.cbar_axes:
+            cax.cla()
+        cbar_raw = self.fig.colorbar(im_raw, cax=cbar_raw_ax, orientation="horizontal")
+        cbar_raw.ax.set_xlabel("Raw intensity (normalized)")
+        cbar_seg = self.fig.colorbar(im_seg, cax=cbar_seg_ax, orientation="horizontal")
+        cbar_seg.ax.set_xlabel("Otsu normalization")
 
         self.canvas.draw_idle()
 
