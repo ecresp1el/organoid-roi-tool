@@ -192,7 +192,7 @@ When you save an ROI for `image.tif` in a folder, these files are written in the
 - `image_roi.json`: coordinates of the polygon you drew.
 - `image_roi_masked.tif`: full‑size TIFF with an associated alpha channel marking the ROI. Original pixels are preserved; the alpha marks outside‑ROI as transparent.
 - `image_roi_masked_cropped.tif`: a tighter crop around the ROI, also with alpha.
-- Plot outputs (via `python -m dcxspot_play.plot_growth`): saved in `<project-root>/plots/` (e.g., `organoid_area_over_time.png`, `organoid_growth_curve.png`).
+- Plot outputs (via `python -m dcxspot_play.plot_growth`): saved in `<project-root>/plots/` (e.g., `organoid_area_over_time.png`, `organoid_growth_curve.png`, `organoid_area_boxplot.png`).
 
 Measurements CSVs (upsert one row per image):
 - Local folder CSV: `<image-folder>/roi_measurements.csv`
@@ -213,13 +213,13 @@ Activity log (project-level):
 
 ### Plotting ROI Growth
 
-Run the plotting helper to generate consistent area and growth curves with the shared minimal style:
+Run the plotting helper to generate consistent area, growth, and distribution plots with the shared minimal style:
 
 ```
-python -m dcxspot_play.plot_growth --prefix exp1
+python -m dcxspot_play.plot_growth --prefix exp1 --div-start 11
 ```
 
-The script reads `<project-root>/roi_measurements.csv` by default (using `dcxspot_config.json`) and writes PNGs to `<project-root>/plots/`. Use `--prefix` to label different experiments; override `--output-dir` only when you intentionally want a different destination.
+The script reads `<project-root>/roi_measurements.csv` by default (using `dcxspot_config.json`) and writes PNGs to `<project-root>/plots/`. Outputs include the time-series area trace, the fold-change growth curve, and a per-timepoint area box plot. Set `div_start` in `dcxspot_config.json` (or pass `--div-start`) so day_00 maps to the DIV value you expect (e.g., DIV11). Use `--prefix` to label different experiments; override `--output-dir` only when you intentionally want a different destination.
 
 ---
 
