@@ -1,0 +1,16 @@
+{
+  "project_root": "/Volumes/Manny2TB/exp1_bf_d11_ventral_only/exp1_bf_d11_ventral_only_projectfolder",
+  "output_root": "/Volumes/Manny2TB/dcxspot_outputs",
+  "fluor_subdir": "fluorescence",
+  "fluor_suffix": "_mcherry.tif",
+  "min_area": 24,
+  "max_area": 8000,
+  "min_distance": 3,
+  "morph_radius": 0,
+  "normalize_percentiles": [
+    2,
+    99
+  ],
+  "save_1x4": true,
+  "limit": 1
+}
