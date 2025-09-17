@@ -10,6 +10,7 @@ from typing import List, Optional, Tuple
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+from matplotlib import patches
 import numpy as np
 import pandas as pd
 import tifffile
@@ -24,20 +25,28 @@ from .utils import _read_tiff
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "dcxspot_config.json"
 
 
-def load_default_target() -> Optional[Path]:
+def load_config() -> dict:
     if not CONFIG_PATH.exists():
-        return None
+        return {}
     try:
-        cfg = json.loads(CONFIG_PATH.read_text())
+        return json.loads(CONFIG_PATH.read_text())
     except Exception:
-        return None
+        return {}
+
+
+def load_default_target(cfg: Optional[dict] = None) -> Optional[Path]:
+    cfg = cfg or load_config()
     project_root = cfg.get("project_root")
     if not project_root:
         return None
-    store_within = cfg.get("store_within_project", True)
-    subdir = cfg.get("output_subdir", "dcxspot")
     project_root = Path(project_root)
-    return project_root / "wells" if store_within else Path(cfg.get("output_root", project_root))
+    store_within = cfg.get("store_within_project", True)
+    if store_within:
+        return project_root
+    output_root = cfg.get("output_root")
+    if output_root:
+        return Path(output_root)
+    return project_root
 
 
 @dataclass
@@ -138,7 +147,7 @@ def _upsample(arr: np.ndarray, factor: int = 4) -> np.ndarray:
 
 
 class DCXBrowserApp(tk.Tk):
-    def __init__(self, sets: List[DCXSet], origin: Optional[Path]):
+    def __init__(self, sets: List[DCXSet], origin: Optional[Path], config: Optional[dict] = None):
         super().__init__()
         self.title("DCX Spot Browser")
         self.geometry("1320x820")
@@ -153,6 +162,10 @@ class DCXBrowserApp(tk.Tk):
         self.otsu_threshold: float = 0.0
         self.binary_map: Optional[np.ndarray] = None
         self.measurements: Optional[pd.DataFrame] = None
+        self.config_data = config or {}
+        self.upsample_factor = 4
+        self.scale_bar_px = int(self.config_data.get("scale_bar_px", 100))
+        self.scale_bar_label = self.config_data.get("scale_bar_label")
 
         self._build_ui()
         if self.sets:
@@ -160,7 +173,7 @@ class DCXBrowserApp(tk.Tk):
             self.listbox.selection_set(0)
             self._load_selected_set(0)
         else:
-            default_target = load_default_target()
+            default_target = load_default_target(self.config_data)
             if default_target is not None:
                 self.status_var.set(f"No dcxspot folders found under {default_target}")
             else:
@@ -318,6 +331,31 @@ class DCXBrowserApp(tk.Tk):
         x1 = min(self.roi_mask.shape[1], xs.max() + pad + 1)
         return (slice(y0, y1), slice(x0, x1))
 
+    def _draw_scale_bar(self, ax, array_shape):
+        if self.scale_bar_px <= 0:
+            return
+        upsample = self.upsample_factor
+        length = self.scale_bar_px * upsample
+        height = max(4, upsample)
+        margin = 20
+        img_h, img_w = array_shape
+        x0 = margin
+        y0 = img_h - margin - height
+        rect = patches.Rectangle((x0, y0), length, height, color="white", linewidth=0)
+        ax.add_patch(rect)
+        label = self.scale_bar_label or f"{self.scale_bar_px} px"
+        ax.text(
+            x0 + length / 2,
+            y0 - 8,
+            label,
+            color="white",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            weight="bold",
+            bbox=dict(facecolor="black", alpha=0.6, boxstyle="round,pad=0.2"),
+        )
+
     def _update_display(self):
         if self.labels is None or self.mcherry is None or self.segmentation is None:
             return
@@ -336,9 +374,10 @@ class DCXBrowserApp(tk.Tk):
         seg_disp = self.segmentation[crop]
         boundary = segmentation.find_boundaries(cluster_mask, mode="inner").astype(float)[crop]
 
-        raw_zoom = _upsample(raw_disp, factor=4)
-        seg_zoom = _upsample(seg_disp, factor=4)
-        boundary_zoom = _upsample(boundary, factor=4)
+        factor = self.upsample_factor
+        raw_zoom = _upsample(raw_disp, factor=factor)
+        seg_zoom = _upsample(seg_disp, factor=factor)
+        boundary_zoom = _upsample(boundary, factor=factor)
 
         ax_raw = self.axes[0, 0]
         ax_seg = self.axes[0, 1]
@@ -350,12 +389,14 @@ class DCXBrowserApp(tk.Tk):
         ax_raw.set_title(f"Raw ({suffix})")
         ax_raw.axis("off")
         ax_raw.set_anchor("C")
+        self._draw_scale_bar(ax_raw, raw_zoom.shape[:2])
 
         ax_seg.clear()
         ax_seg.imshow(seg_zoom, cmap="magma")
         ax_seg.set_title(f"Otsu normalization ({suffix})")
         ax_seg.axis("off")
         ax_seg.set_anchor("C")
+        self._draw_scale_bar(ax_seg, seg_zoom.shape[:2])
 
         ax_mask.clear()
         ax_mask.imshow(boundary_zoom, cmap="viridis")
@@ -369,6 +410,7 @@ class DCXBrowserApp(tk.Tk):
         ax_overlay.set_title(f"Mask on Otsu ({suffix})")
         ax_overlay.axis("off")
         ax_overlay.set_anchor("C")
+        self._draw_scale_bar(ax_overlay, seg_zoom.shape[:2])
 
         self.canvas.draw_idle()
 
@@ -386,12 +428,13 @@ class DCXBrowserApp(tk.Tk):
 
 
 def launch_browser(path: Optional[Path] = None):
-    target = path or load_default_target()
+    config = load_config()
+    target = path or load_default_target(config)
     sets = discover_sets(target)
     origin = None
     if target is not None:
         origin = target if target.is_dir() else target.parent
-    app = DCXBrowserApp(sets, origin)
+    app = DCXBrowserApp(sets, origin, config=config)
     if not sets and target is not None:
         app.status_var.set(f"No DCX outputs found in {target}")
     app.mainloop()
