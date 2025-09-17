@@ -294,13 +294,14 @@ class DCXBrowserApp(tk.Tk):
         if lo_val is not None and hi_val is not None:
             seg_norm = (self.mcherry - lo_val) / (hi_val - lo_val)
             seg_norm = np.clip(seg_norm, 0.0, 1.0)
-            seg_disp = seg_norm * (hi_val - lo_val) + lo_val
+            otsu_raw = self.otsu_threshold * (hi_val - lo_val) + lo_val
         else:
             seg_norm = self.mcherry.astype(np.float32)
-            seg_disp = self.mcherry.astype(np.float32)
+            otsu_raw = self.otsu_threshold
 
-        self.segmentation_norm = seg_norm
-        self.segmentation_display = seg_disp
+        self.segmentation_norm = seg_norm.astype(np.float32)
+        self.segmentation_display = self.mcherry.astype(np.float32)
+        self.otsu_threshold_raw = float(otsu_raw)
         self.binary_map = (self.segmentation_norm > self.otsu_threshold) & roi_mask
 
         try:

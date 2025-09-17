@@ -4,6 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import ndimage as ndi
@@ -193,6 +196,16 @@ def run_one(
     dcx_binary = bw.astype(np.uint8)
     dcx_binary_masked = apply_roi_mask(dcx_binary.astype(np.float32), roi_bool, outside="nan")
 
+    roi_vals = mcherry_raw[roi_bool]
+    if roi_vals.size > 0:
+        roi_mean = float(np.mean(roi_vals))
+        roi_median = float(np.median(roi_vals))
+        roi_std = float(np.std(roi_vals))
+        roi_min = float(np.min(roi_vals))
+        roi_max = float(np.max(roi_vals))
+    else:
+        roi_mean = roi_median = roi_std = roi_min = roi_max = float("nan")
+
     # Quantification
     df = measure_from_raw(mcherry_raw, labels)
     df["image_id"] = image_id
@@ -208,6 +221,11 @@ def run_one(
         "removed_large": filtered_info["removed_large"],
         "n_final": n_final,
         "otsu_threshold": otsu_thr,
+        "roi_mean_intensity": roi_mean,
+        "roi_median_intensity": roi_median,
+        "roi_std_intensity": roi_std,
+        "roi_min_intensity": roi_min,
+        "roi_max_intensity": roi_max,
         "min_area_px": params["min_area"],
         "max_area_px": params["max_area"],
         "min_distance_px": params["min_distance"],
@@ -223,6 +241,20 @@ def run_one(
     save_tiff(output_dir / f"{image_id}_bf_masked_zero.tif", bf_masked_zero.astype(np.float32))
     save_tiff(output_dir / f"{image_id}_mcherry_masked.tif", mcherry_masked.astype(np.float32))
     save_tiff(output_dir / f"{image_id}_mcherry_masked_zero.tif", mcherry_masked_zero.astype(np.float32))
+
+    fig, axes = plt.subplots(1, 2, figsize=(8, 4), dpi=300)
+    raw_display = np.nan_to_num(mcherry_masked, nan=0.0)
+    axes[0].imshow(raw_display, cmap="gray")
+    axes[0].set_title("Raw (ROI masked)")
+    axes[0].axis("off")
+    axes[1].imshow(raw_display, cmap="gray")
+    axes[1].imshow(np.ma.masked_where(~bw, bw), cmap="cool", alpha=0.4)
+    axes[1].set_title("Raw + DCX mask")
+    axes[1].axis("off")
+    fig.tight_layout()
+    debug_png = output_dir / f"{image_id}_debug_mask_overlay.png"
+    fig.savefig(debug_png, bbox_inches="tight")
+    plt.close(fig)
 
     save_csv(output_dir / f"{image_id}_spots.csv", df)
     save_json(output_dir / f"{image_id}_qc.json", qc)
