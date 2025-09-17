@@ -5,7 +5,7 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import matplotlib
 matplotlib.use("TkAgg")
@@ -34,7 +34,10 @@ def load_default_target() -> Optional[Path]:
     project_root = cfg.get("project_root")
     if not project_root:
         return None
-    return Path(project_root)
+    store_within = cfg.get("store_within_project", True)
+    subdir = cfg.get("output_subdir", "dcxspot")
+    project_root = Path(project_root)
+    return project_root / "wells" if store_within else Path(cfg.get("output_root", project_root))
 
 
 @dataclass
@@ -45,6 +48,7 @@ class DCXSet:
     mcherry_path: Path
     overlay_path: Path
     spots_path: Path
+    qc_path: Path
 
 
 def _find_sets_in_folder(folder: Path) -> List[DCXSet]:
@@ -54,7 +58,8 @@ def _find_sets_in_folder(folder: Path) -> List[DCXSet]:
         mcherry = labels_path.with_name(f"{base}_mcherry_masked.tif")
         overlay = labels_path.with_name(f"{base}_overlay_ids.png")
         spots = labels_path.with_name(f"{base}_spots.csv")
-        if not (mcherry.exists() and overlay.exists() and spots.exists()):
+        qc = labels_path.with_name(f"{base}_qc.json")
+        if not (mcherry.exists() and overlay.exists() and spots.exists() and qc.exists()):
             continue
         sets.append(
             DCXSet(
@@ -64,6 +69,7 @@ def _find_sets_in_folder(folder: Path) -> List[DCXSet]:
                 mcherry_path=mcherry,
                 overlay_path=overlay,
                 spots_path=spots,
+                qc_path=qc,
             )
         )
     return sets
@@ -99,19 +105,52 @@ def _percentile_stretch(img: np.ndarray, lo: float = 2.0, hi: float = 98.0) -> n
     return np.clip(stretched, 0.0, 1.0).astype(np.float32)
 
 
+def _normalize_for_segmentation(data: np.ndarray, roi: np.ndarray, percentiles: Tuple[float, float]) -> np.ndarray:
+    lo, hi = percentiles
+    img = np.nan_to_num(data, nan=0.0)
+    if lo == 0 and hi == 0:
+        return img.astype(np.float32)
+    roi_vals = img[roi]
+    if roi_vals.size == 0:
+        return img.astype(np.float32)
+    lo_val, hi_val = np.percentile(roi_vals, [lo, hi])
+    if hi_val <= lo_val:
+        return img.astype(np.float32)
+    seg = (img - lo_val) / (hi_val - lo_val)
+    return np.clip(seg, 0.0, 1.0).astype(np.float32)
+
+
+def _cluster_crop(mask: np.ndarray, pad: int = 5) -> Tuple[slice, slice]:
+    ys, xs = np.where(mask)
+    if ys.size == 0 or xs.size == 0:
+        return (slice(0, mask.shape[0]), slice(0, mask.shape[1]))
+    y0 = max(0, ys.min() - pad)
+    y1 = min(mask.shape[0], ys.max() + pad + 1)
+    x0 = max(0, xs.min() - pad)
+    x1 = min(mask.shape[1], xs.max() + pad + 1)
+    return (slice(y0, y1), slice(x0, x1))
+
+
+def _upsample(arr: np.ndarray, factor: int = 4) -> np.ndarray:
+    if arr.size == 0:
+        return arr
+    return np.repeat(np.repeat(arr, factor, axis=0), factor, axis=1)
+
+
 class DCXBrowserApp(tk.Tk):
     def __init__(self, sets: List[DCXSet], origin: Optional[Path]):
         super().__init__()
         self.title("DCX Spot Browser")
-        self.geometry("1320x780")
+        self.geometry("1320x820")
 
         self.origin_path = origin
         self.sets = sets
         self.current_set: Optional[DCXSet] = None
         self.labels: Optional[np.ndarray] = None
         self.mcherry: Optional[np.ndarray] = None
-        self.boundaries: Optional[np.ndarray] = None
-        self.overlay_img: Optional[np.ndarray] = None
+        self.segmentation: Optional[np.ndarray] = None
+        self.otsu_threshold: float = 0.0
+        self.binary_map: Optional[np.ndarray] = None
         self.measurements: Optional[pd.DataFrame] = None
 
         self._build_ui()
@@ -120,7 +159,11 @@ class DCXBrowserApp(tk.Tk):
             self.listbox.selection_set(0)
             self._load_selected_set(0)
         else:
-            self.status_var.set("Use Open folder… to select a dcxspot directory")
+            default_target = load_default_target()
+            if default_target is not None:
+                self.status_var.set(f"No dcxspot folders found under {default_target}")
+            else:
+                self.status_var.set("Use Open folder… to select a dcxspot directory")
 
     def _build_ui(self):
         main = ttk.Frame(self)
@@ -157,7 +200,7 @@ class DCXBrowserApp(tk.Tk):
         self.info_var = tk.StringVar(value="Select an entry")
         ttk.Label(ctrl, textvariable=self.info_var).pack(side=tk.LEFT, padx=5)
 
-        self.fig, self.axes = plt.subplots(1, 3, figsize=(16, 5))
+        self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 12))
         self.fig.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.fig, master=content)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
@@ -209,13 +252,21 @@ class DCXBrowserApp(tk.Tk):
             return
         item = self.sets[index]
         self.current_set = item
+
         self.labels = tifffile.imread(item.labels_path).astype(np.int32)
         self.mcherry = _read_tiff(item.mcherry_path).astype(np.float32)
-        self.boundaries = segmentation.find_boundaries(self.labels, mode="inner")
+        roi_mask = np.isfinite(self.mcherry)
+
         try:
-            self.overlay_img = plt.imread(item.overlay_path)
+            qc = json.loads(item.qc_path.read_text())
         except Exception:
-            self.overlay_img = None
+            qc = {}
+        self.otsu_threshold = float(qc.get("otsu_threshold", 0.0))
+        normalize_percentiles = tuple(qc.get("normalize_percentiles", (0.0, 0.0)))
+
+        self.segmentation = _normalize_for_segmentation(self.mcherry, roi_mask, normalize_percentiles)
+        self.binary_map = (self.segmentation > self.otsu_threshold) & roi_mask
+
         try:
             self.measurements = pd.read_csv(item.spots_path)
         except Exception:
@@ -243,42 +294,56 @@ class DCXBrowserApp(tk.Tk):
         self._update_display()
 
     def _update_display(self):
-        if self.labels is None or self.mcherry is None:
+        if self.labels is None or self.mcherry is None or self.segmentation is None:
             return
         cluster_id = self.cluster_var.get()
         max_cluster = int(self.cluster_spin.cget("to"))
         if cluster_id < 1 or cluster_id > max_cluster:
             return
 
-        mcherry_disp = _percentile_stretch(self.mcherry)
-        mask = self.labels == cluster_id
+        cluster_mask = self.labels == cluster_id
+        crop = _cluster_crop(cluster_mask)
 
-        self.axes[0].clear()
-        self.axes[0].imshow(mcherry_disp, cmap="gray")
-        if self.boundaries is not None:
-            self.axes[0].imshow(np.ma.masked_where(~self.boundaries, self.boundaries), cmap="autumn", alpha=0.6)
-        self.axes[0].imshow(np.ma.masked_where(~mask, mask), cmap="cool", alpha=0.5)
-        self.axes[0].set_title("mCherry + cluster highlight")
-        self.axes[0].axis("off")
+        raw_disp = _percentile_stretch(self.mcherry)
+        raw_zoom = _upsample(raw_disp[crop], factor=4)
 
-        self.axes[1].clear()
-        self.axes[1].imshow(mask, cmap="viridis")
-        self.axes[1].set_title(f"Cluster {cluster_id} mask")
-        self.axes[1].axis("off")
+        seg_zoom = _upsample(self.segmentation[crop], factor=4)
 
-        self.axes[2].clear()
-        if self.overlay_img is not None:
-            self.axes[2].imshow(self.overlay_img)
-            self.axes[2].imshow(np.ma.masked_where(~mask, mask), cmap="cool", alpha=0.3)
-            self.axes[2].set_title("Overlay (IDs)")
-        else:
-            self.axes[2].text(0.5, 0.5, "Overlay unavailable", ha="center", va="center")
-            self.axes[2].axis("off")
-        self.axes[2].axis("off")
+        boundary = segmentation.find_boundaries(cluster_mask, mode="inner").astype(float)
+        boundary_zoom = _upsample(boundary[crop], factor=4)
+
+        seg_overlay = seg_zoom.copy()
+
+        # Panel arrangement: (0,0) raw, (0,1) segmentation, (1,0) mask boundary, (1,1) segmentation with boundary overlay
+        ax_raw = self.axes[0, 0]
+        ax_seg = self.axes[0, 1]
+        ax_mask = self.axes[1, 0]
+        ax_overlay = self.axes[1, 1]
+
+        ax_raw.clear()
+        ax_raw.imshow(raw_zoom, cmap="gray")
+        ax_raw.set_title("Raw (ROI cropped x4)")
+        ax_raw.axis("off")
+
+        ax_seg.clear()
+        ax_seg.imshow(seg_zoom, cmap="magma")
+        ax_seg.set_title("Otsu normalization")
+        ax_seg.axis("off")
+
+        ax_mask.clear()
+        ax_mask.imshow(boundary_zoom, cmap="viridis")
+        ax_mask.set_title("DCX mask boundary")
+        ax_mask.axis("off")
+
+        ax_overlay.clear()
+        ax_overlay.imshow(seg_zoom, cmap="magma")
+        ax_overlay.imshow(np.ma.masked_where(boundary_zoom == 0, boundary_zoom), cmap="cool", alpha=0.6)
+        ax_overlay.set_title("Mask on Otsu")
+        ax_overlay.axis("off")
 
         self.canvas.draw_idle()
 
-        info = f"Cluster {cluster_id}/{max_cluster}"
+        info = f"Cluster {cluster_id}/{max_cluster} | otsu={self.otsu_threshold:.4g}"
         if self.measurements is not None and not self.measurements.empty:
             row = self.measurements[self.measurements["cluster_id"] == cluster_id]
             if not row.empty:
