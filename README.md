@@ -192,6 +192,7 @@ When you save an ROI for `image.tif` in a folder, these files are written in the
 - `image_roi.json`: coordinates of the polygon you drew.
 - `image_roi_masked.tif`: full‑size TIFF with an associated alpha channel marking the ROI. Original pixels are preserved; the alpha marks outside‑ROI as transparent.
 - `image_roi_masked_cropped.tif`: a tighter crop around the ROI, also with alpha.
+- Plot outputs (via `python -m dcxspot_play.plot_growth`): saved in `<project-root>/plots/` (e.g., `organoid_area_over_time.png`, `organoid_growth_curve.png`).
 
 Measurements CSVs (upsert one row per image):
 - Local folder CSV: `<image-folder>/roi_measurements.csv`
@@ -209,6 +210,16 @@ Note on pixel size:
 
 Activity log (project-level):
 - `<project>/roi_activity_log.csv` records one line per save/delete with: timestamp_iso, user, image_relpath, image_path, action (save/delete), well, day, time.
+
+### Plotting ROI Growth
+
+Run the plotting helper to generate consistent area and growth curves with the shared minimal style:
+
+```
+python -m dcxspot_play.plot_growth --prefix exp1
+```
+
+The script reads `<project-root>/roi_measurements.csv` by default (using `dcxspot_config.json`) and writes PNGs to `<project-root>/plots/`. Use `--prefix` to label different experiments; override `--output-dir` only when you intentionally want a different destination.
 
 ---
 

@@ -23,6 +23,8 @@ class ProcessedMeasurements:
     data: pd.DataFrame
     area_summary: pd.DataFrame
     growth_summary: pd.DataFrame
+    time_labels: pd.DataFrame
+    div_start: Optional[int]
 
 
 def _load_config(path: Path = CONFIG_PATH) -> dict:
@@ -34,12 +36,20 @@ def _load_config(path: Path = CONFIG_PATH) -> dict:
         return {}
 
 
-def _default_roi_measurements_path() -> Optional[Path]:
+def _default_project_root() -> Optional[Path]:
     cfg = _load_config()
     project_root = cfg.get("project_root")
     if not project_root:
         return None
-    candidate = Path(project_root).expanduser() / "roi_measurements.csv"
+    return Path(project_root).expanduser()
+
+
+
+def _default_roi_measurements_path() -> Optional[Path]:
+    project_root = _default_project_root()
+    if project_root is None:
+        return None
+    candidate = project_root / "roi_measurements.csv"
     if candidate.exists():
         return candidate
     return None
@@ -75,7 +85,35 @@ def _parse_time_to_hours(time_label: str) -> Optional[float]:
     return float(hours) + minutes / 60.0
 
 
-def _prepare_measurements(csv_path: Path) -> ProcessedMeasurements:
+def _format_time_label(day_index: int, time_label: str, div_start: Optional[int]) -> str:
+    if div_start is not None:
+        base = f"DIV{div_start + day_index}"
+    else:
+        base = f"day_{day_index:02d}"
+    clean_time = time_label.strip() if isinstance(time_label, str) else ""
+    if clean_time:
+        return f"{base} {clean_time}"
+    return base
+
+
+
+def _build_time_labels(df: pd.DataFrame, div_start: Optional[int]) -> pd.DataFrame:
+    labels = (
+        df[["time_hours", "day_index", "time"]]
+        .drop_duplicates()
+        .sort_values("time_hours")
+        .reset_index(drop=True)
+    )
+    labels["label"] = [
+        _format_time_label(row.day_index, row.time, div_start)
+        for row in labels.itertuples()
+    ]
+    if div_start is not None:
+        labels["div_day"] = labels["day_index"] + div_start
+    return labels
+
+
+def _prepare_measurements(csv_path: Path, div_start: Optional[int]) -> ProcessedMeasurements:
     df = pd.read_csv(csv_path)
     if df.empty:
         raise ValueError("roi_measurements.csv is empty")
@@ -94,6 +132,12 @@ def _prepare_measurements(csv_path: Path) -> ProcessedMeasurements:
     df["time_hours"] = df["day_index"] * 24.0 + df["time_in_hours"]
     df["time_days"] = df["time_hours"] / 24.0
     df = df.sort_values(["time_hours", "well"]).reset_index(drop=True)
+
+    time_labels = _build_time_labels(df, div_start)
+
+    if div_start is not None:
+        df["div_day"] = df["day_index"] + div_start
+        df["age_div"] = df["time_days"] + div_start
 
     per_well = df.sort_values(["well", "time_hours"])  # ensure chronological order per well
     baseline = per_well.groupby("well")["area_px"].transform("first")
@@ -117,6 +161,8 @@ def _prepare_measurements(csv_path: Path) -> ProcessedMeasurements:
         .sort_values("time_hours")
     )
 
+    area_summary = area_summary.merge(time_labels[["time_hours", "label"]], on="time_hours", how="left")
+
     growth_summary = (
         df.dropna(subset=["area_fold_change"])
         .groupby("time_hours")
@@ -129,17 +175,25 @@ def _prepare_measurements(csv_path: Path) -> ProcessedMeasurements:
         .reset_index()
         .sort_values("time_hours")
     )
+    growth_summary = growth_summary.merge(time_labels[["time_hours", "label"]], on="time_hours", how="left")
     growth_summary["sem_fold"] = growth_summary.apply(
         lambda row: row["std_fold"] / math.sqrt(row["count"]) if row["count"] > 1 and not math.isnan(row["std_fold"]) else 0.0,
         axis=1,
     )
 
-    return ProcessedMeasurements(data=df, area_summary=area_summary, growth_summary=growth_summary)
+    return ProcessedMeasurements(
+        data=df,
+        area_summary=area_summary,
+        growth_summary=growth_summary,
+        time_labels=time_labels,
+        div_start=div_start,
+    )
 
 
 def _plot_area_over_time(processed: ProcessedMeasurements, output_path: Path) -> None:
     df = processed.data
     summary = processed.area_summary
+    labels_df = processed.time_labels
 
     with minimal_style_context():
         fig, ax = plt.subplots()
@@ -173,7 +227,14 @@ def _plot_area_over_time(processed: ProcessedMeasurements, output_path: Path) ->
             label="Interquartile range",
         )
 
-        ax.set_xlabel("Time (hours post start)")
+        if not labels_df.empty:
+            ax.set_xticks(labels_df["time_hours"])
+            ax.set_xticklabels(labels_df["label"], rotation=45, ha="right")
+
+        if processed.div_start is not None:
+            ax.set_xlabel("Organoid age (DIV)")
+        else:
+            ax.set_xlabel("Time (hours post start)")
         ax.set_ylabel("Organoid ROI area (pixels)")
         ax.set_title("Organoid area over time")
         ax.legend(loc="upper left")
@@ -188,6 +249,7 @@ def _plot_area_over_time(processed: ProcessedMeasurements, output_path: Path) ->
 def _plot_growth_curve(processed: ProcessedMeasurements, output_path: Path) -> None:
     df = processed.data
     summary = processed.growth_summary
+    labels_df = processed.time_labels
 
     with minimal_style_context():
         fig, ax = plt.subplots()
@@ -225,7 +287,13 @@ def _plot_growth_curve(processed: ProcessedMeasurements, output_path: Path) -> N
             )
 
         ax.axhline(1.0, color="#4a4a4a", linestyle="--", linewidth=1.0, alpha=0.7)
-        ax.set_xlabel("Time (hours post start)")
+        if not labels_df.empty:
+            ax.set_xticks(labels_df["time_hours"])
+            ax.set_xticklabels(labels_df["label"], rotation=45, ha="right")
+        if processed.div_start is not None:
+            ax.set_xlabel("Organoid age (DIV)")
+        else:
+            ax.set_xlabel("Time (hours post start)")
         ax.set_ylabel("Fold-change in area (relative to first time-point)")
         ax.set_title("Organoid growth curve")
         ax.xaxis.set_major_locator(ticker.MaxNLocator(6))
@@ -253,7 +321,7 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=None,
-        help="Directory where plots will be written. Defaults to the ROI measurements folder.",
+        help="Directory where plots will be written. Defaults to <project-root>/plots.",
     )
     parser.add_argument(
         "--prefix",
@@ -269,7 +337,15 @@ def main() -> None:
     if not input_path.exists():
         raise SystemExit(f"ROI measurements file not found: {input_path}")
 
-    output_dir = (args.output_dir or input_path.parent).expanduser().resolve()
+    project_root = _default_project_root()
+    if project_root is None:
+        project_root = input_path.parent
+    project_root = project_root.expanduser().resolve()
+
+    if args.output_dir:
+        output_dir = args.output_dir.expanduser().resolve()
+    else:
+        output_dir = (project_root / "plots").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     processed = _prepare_measurements(input_path)
