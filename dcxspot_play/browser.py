@@ -148,6 +148,7 @@ class DCXBrowserApp(tk.Tk):
         self.current_set: Optional[DCXSet] = None
         self.labels: Optional[np.ndarray] = None
         self.mcherry: Optional[np.ndarray] = None
+        self.roi_mask: Optional[np.ndarray] = None
         self.segmentation: Optional[np.ndarray] = None
         self.otsu_threshold: float = 0.0
         self.binary_map: Optional[np.ndarray] = None
@@ -199,6 +200,17 @@ class DCXBrowserApp(tk.Tk):
 
         self.info_var = tk.StringVar(value="Select an entry")
         ttk.Label(ctrl, textvariable=self.info_var).pack(side=tk.LEFT, padx=5)
+
+        self.fit_to_roi_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            ctrl,
+            text="Fit to ROI",
+            variable=self.fit_to_roi_var,
+            command=self._update_display,
+        ).pack(side=tk.LEFT, padx=12)
+
+        spacer = ttk.Frame(ctrl)
+        spacer.pack(side=tk.LEFT, expand=True)
 
         self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 12))
         self.fig.tight_layout()
@@ -255,7 +267,8 @@ class DCXBrowserApp(tk.Tk):
 
         self.labels = tifffile.imread(item.labels_path).astype(np.int32)
         self.mcherry = _read_tiff(item.mcherry_path).astype(np.float32)
-        roi_mask = np.isfinite(self.mcherry)
+        self.roi_mask = np.isfinite(self.mcherry)
+        roi_mask = self.roi_mask
 
         try:
             qc = json.loads(item.qc_path.read_text())
@@ -293,6 +306,18 @@ class DCXBrowserApp(tk.Tk):
         self.cluster_var.set(new_value)
         self._update_display()
 
+    def _get_roi_crop(self, pad: int = 10) -> Tuple[slice, slice]:
+        if self.roi_mask is None:
+            return (slice(None), slice(None))
+        ys, xs = np.where(self.roi_mask)
+        if ys.size == 0 or xs.size == 0:
+            return (slice(None), slice(None))
+        y0 = max(0, ys.min() - pad)
+        y1 = min(self.roi_mask.shape[0], ys.max() + pad + 1)
+        x0 = max(0, xs.min() - pad)
+        x1 = min(self.roi_mask.shape[1], xs.max() + pad + 1)
+        return (slice(y0, y1), slice(x0, x1))
+
     def _update_display(self):
         if self.labels is None or self.mcherry is None or self.segmentation is None:
             return
@@ -303,12 +328,16 @@ class DCXBrowserApp(tk.Tk):
 
         cluster_mask = self.labels == cluster_id
 
-        raw_disp = _percentile_stretch(self.mcherry)
+        fit_roi = bool(self.fit_to_roi_var.get())
+        crop = self._get_roi_crop(pad=10) if fit_roi else (slice(None), slice(None))
+        suffix = "ROI crop ×4" if fit_roi else "×4"
+
+        raw_disp = _percentile_stretch(self.mcherry)[crop]
+        seg_disp = self.segmentation[crop]
+        boundary = segmentation.find_boundaries(cluster_mask, mode="inner").astype(float)[crop]
+
         raw_zoom = _upsample(raw_disp, factor=4)
-
-        seg_zoom = _upsample(self.segmentation, factor=4)
-
-        boundary = segmentation.find_boundaries(cluster_mask, mode="inner").astype(float)
+        seg_zoom = _upsample(seg_disp, factor=4)
         boundary_zoom = _upsample(boundary, factor=4)
 
         ax_raw = self.axes[0, 0]
@@ -318,24 +347,28 @@ class DCXBrowserApp(tk.Tk):
 
         ax_raw.clear()
         ax_raw.imshow(raw_zoom, cmap="gray")
-        ax_raw.set_title("Raw (x4)")
+        ax_raw.set_title(f"Raw ({suffix})")
         ax_raw.axis("off")
+        ax_raw.set_anchor("C")
 
         ax_seg.clear()
         ax_seg.imshow(seg_zoom, cmap="magma")
-        ax_seg.set_title("Otsu normalization (x4)")
+        ax_seg.set_title(f"Otsu normalization ({suffix})")
         ax_seg.axis("off")
+        ax_seg.set_anchor("C")
 
         ax_mask.clear()
         ax_mask.imshow(boundary_zoom, cmap="viridis")
-        ax_mask.set_title("DCX mask boundary")
+        ax_mask.set_title(f"DCX mask boundary ({suffix})")
         ax_mask.axis("off")
+        ax_mask.set_anchor("C")
 
         ax_overlay.clear()
         ax_overlay.imshow(seg_zoom, cmap="magma")
         ax_overlay.imshow(np.ma.masked_where(boundary_zoom == 0, boundary_zoom), cmap="cool", alpha=0.6)
-        ax_overlay.set_title("Mask on Otsu")
+        ax_overlay.set_title(f"Mask on Otsu ({suffix})")
         ax_overlay.axis("off")
+        ax_overlay.set_anchor("C")
 
         self.canvas.draw_idle()
 
