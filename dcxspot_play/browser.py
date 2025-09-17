@@ -103,17 +103,6 @@ def discover_sets(target: Optional[Path]) -> List[DCXSet]:
     return []
 
 
-def _percentile_stretch(img: np.ndarray, lo: float = 2.0, hi: float = 98.0) -> np.ndarray:
-    finite = img[np.isfinite(img)]
-    if finite.size == 0:
-        return np.zeros_like(img, dtype=np.float32)
-    vmin, vmax = np.percentile(finite, [lo, hi])
-    if vmax <= vmin:
-        vmax = vmin + 1e-6
-    stretched = (img - vmin) / (vmax - vmin)
-    return np.clip(stretched, 0.0, 1.0).astype(np.float32)
-
-
 def _normalize_for_segmentation(data: np.ndarray, roi: np.ndarray, percentiles: Tuple[float, float]) -> np.ndarray:
     lo, hi = percentiles
     img = np.nan_to_num(data, nan=0.0)
@@ -226,9 +215,10 @@ class DCXBrowserApp(tk.Tk):
         spacer.pack(side=tk.LEFT, expand=True)
 
         self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 12))
+        self.fig.subplots_adjust(left=0.08, right=0.95, bottom=0.08, top=0.9, hspace=0.25, wspace=0.25)
         self.cbar_axes = [
-            self.fig.add_axes([0.12, 0.94, 0.35, 0.018]),  # raw
-            self.fig.add_axes([0.57, 0.94, 0.35, 0.018]),  # otsu
+            self.fig.add_axes([0.08, 0.92, 0.37, 0.02]),  # raw
+            self.fig.add_axes([0.55, 0.92, 0.37, 0.02]),  # otsu
         ]
         self.canvas = FigureCanvasTkAgg(self.fig, master=content)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
@@ -293,8 +283,25 @@ class DCXBrowserApp(tk.Tk):
         self.otsu_threshold = float(qc.get("otsu_threshold", 0.0))
         normalize_percentiles = tuple(qc.get("normalize_percentiles", (0.0, 0.0)))
 
-        self.segmentation = _normalize_for_segmentation(self.mcherry, roi_mask, normalize_percentiles)
-        self.binary_map = (self.segmentation > self.otsu_threshold) & roi_mask
+        lo, hi = normalize_percentiles
+        roi_vals = self.mcherry[roi_mask]
+        lo_val = hi_val = None
+        if roi_vals.size > 0 and not (lo == 0 and hi == 0):
+            lo_val, hi_val = np.percentile(roi_vals, [lo, hi])
+            if hi_val <= lo_val:
+                lo_val = hi_val = None
+
+        if lo_val is not None and hi_val is not None:
+            seg_norm = (self.mcherry - lo_val) / (hi_val - lo_val)
+            seg_norm = np.clip(seg_norm, 0.0, 1.0)
+            seg_disp = seg_norm * (hi_val - lo_val) + lo_val
+        else:
+            seg_norm = self.mcherry.astype(np.float32)
+            seg_disp = self.mcherry.astype(np.float32)
+
+        self.segmentation_norm = seg_norm
+        self.segmentation_display = seg_disp
+        self.binary_map = (self.segmentation_norm > self.otsu_threshold) & roi_mask
 
         try:
             self.measurements = pd.read_csv(item.spots_path)
@@ -360,7 +367,7 @@ class DCXBrowserApp(tk.Tk):
         )
 
     def _update_display(self):
-        if self.labels is None or self.mcherry is None or self.segmentation is None:
+        if self.labels is None or self.mcherry is None or self.segmentation_display is None:
             return
         cluster_id = self.cluster_var.get()
         max_cluster = int(self.cluster_spin.cget("to"))
@@ -373,8 +380,8 @@ class DCXBrowserApp(tk.Tk):
         crop = self._get_roi_crop(pad=10) if fit_roi else (slice(None), slice(None))
         suffix = "ROI crop ×4" if fit_roi else "×4"
 
-        raw_disp = _percentile_stretch(self.mcherry)[crop]
-        seg_disp = self.segmentation[crop]
+        raw_disp = np.nan_to_num(self.mcherry[crop], nan=0.0)
+        seg_disp = np.nan_to_num(self.segmentation_display[crop], nan=0.0)
         boundary = segmentation.find_boundaries(cluster_mask, mode="inner").astype(float)[crop]
 
         factor = self.upsample_factor
@@ -388,14 +395,22 @@ class DCXBrowserApp(tk.Tk):
         ax_overlay = self.axes[1, 1]
 
         ax_raw.clear()
-        im_raw = ax_raw.imshow(raw_zoom, cmap="gray", vmin=0.0, vmax=1.0)
+        raw_min = float(np.min(raw_disp))
+        raw_max = float(np.max(raw_disp))
+        if raw_min == raw_max:
+            raw_max = raw_min + 1.0
+        im_raw = ax_raw.imshow(raw_zoom, cmap="gray", vmin=raw_min, vmax=raw_max)
         ax_raw.set_title(f"Raw ({suffix})")
         ax_raw.axis("off")
         ax_raw.set_anchor("C")
         self._draw_scale_bar(ax_raw, raw_zoom.shape[:2])
 
         ax_seg.clear()
-        im_seg = ax_seg.imshow(seg_zoom, cmap="magma", vmin=0.0, vmax=1.0)
+        seg_min = float(np.min(seg_disp))
+        seg_max = float(np.max(seg_disp))
+        if seg_min == seg_max:
+            seg_max = seg_min + 1.0
+        im_seg = ax_seg.imshow(seg_zoom, cmap="magma", vmin=seg_min, vmax=seg_max)
         ax_seg.set_title(f"Otsu normalization ({suffix})")
         ax_seg.axis("off")
         ax_seg.set_anchor("C")
@@ -408,7 +423,7 @@ class DCXBrowserApp(tk.Tk):
         ax_mask.set_anchor("C")
 
         ax_overlay.clear()
-        ax_overlay.imshow(seg_zoom, cmap="magma", vmin=0.0, vmax=1.0)
+        ax_overlay.imshow(seg_zoom, cmap="magma", vmin=seg_min, vmax=seg_max)
         ax_overlay.imshow(np.ma.masked_where(boundary_zoom == 0, boundary_zoom), cmap="cool", alpha=0.6)
         ax_overlay.set_title(f"Mask on Otsu ({suffix})")
         ax_overlay.axis("off")
@@ -419,9 +434,9 @@ class DCXBrowserApp(tk.Tk):
         for cax in self.cbar_axes:
             cax.cla()
         cbar_raw = self.fig.colorbar(im_raw, cax=cbar_raw_ax, orientation="horizontal")
-        cbar_raw.ax.set_xlabel("Raw intensity (normalized)")
+        cbar_raw.ax.set_xlabel("Raw intensity (pixel value)")
         cbar_seg = self.fig.colorbar(im_seg, cax=cbar_seg_ax, orientation="horizontal")
-        cbar_seg.ax.set_xlabel("Otsu normalization")
+        cbar_seg.ax.set_xlabel("Otsu input intensity")
 
         self.canvas.draw_idle()
 
