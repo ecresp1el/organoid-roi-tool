@@ -302,19 +302,15 @@ class DCXBrowserApp(tk.Tk):
             return
 
         cluster_mask = self.labels == cluster_id
-        crop = _cluster_crop(cluster_mask)
 
         raw_disp = _percentile_stretch(self.mcherry)
-        raw_zoom = _upsample(raw_disp[crop], factor=4)
+        raw_zoom = _upsample(raw_disp, factor=4)
 
-        seg_zoom = _upsample(self.segmentation[crop], factor=4)
+        seg_zoom = _upsample(self.segmentation, factor=4)
 
         boundary = segmentation.find_boundaries(cluster_mask, mode="inner").astype(float)
-        boundary_zoom = _upsample(boundary[crop], factor=4)
+        boundary_zoom = _upsample(boundary, factor=4)
 
-        seg_overlay = seg_zoom.copy()
-
-        # Panel arrangement: (0,0) raw, (0,1) segmentation, (1,0) mask boundary, (1,1) segmentation with boundary overlay
         ax_raw = self.axes[0, 0]
         ax_seg = self.axes[0, 1]
         ax_mask = self.axes[1, 0]
@@ -322,12 +318,12 @@ class DCXBrowserApp(tk.Tk):
 
         ax_raw.clear()
         ax_raw.imshow(raw_zoom, cmap="gray")
-        ax_raw.set_title("Raw (ROI cropped x4)")
+        ax_raw.set_title("Raw (x4)")
         ax_raw.axis("off")
 
         ax_seg.clear()
         ax_seg.imshow(seg_zoom, cmap="magma")
-        ax_seg.set_title("Otsu normalization")
+        ax_seg.set_title("Otsu normalization (x4)")
         ax_seg.axis("off")
 
         ax_mask.clear()
