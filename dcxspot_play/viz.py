@@ -114,8 +114,12 @@ def save_overlay_ids(
     fig.savefig(out_png, dpi=300, bbox_inches="tight", pad_inches=0.05)
     fig.canvas.draw()
     width, height = fig.canvas.get_width_height()
-    overlay_rgb = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    overlay_rgb = overlay_rgb.reshape((height, width, 3))
+    try:
+        buffer = fig.canvas.tostring_rgb()
+        overlay_rgb = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 3))
+    except AttributeError:
+        overlay_rgba = np.array(fig.canvas.renderer.buffer_rgba())
+        overlay_rgb = np.ascontiguousarray(overlay_rgba[..., :3])
     plt.close(fig)
     return overlay_rgb
 
