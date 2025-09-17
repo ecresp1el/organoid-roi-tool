@@ -13,6 +13,7 @@ import pandas as pd
 from matplotlib import ticker
 
 from .plotting import minimal_style_context
+from .utils import apply_roi_mask, read_image, read_mask
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "dcxspot_config.json"
 
@@ -110,7 +111,26 @@ def _build_time_labels(df: pd.DataFrame, div_start: Optional[int]) -> pd.DataFra
     return labels
 
 
-def _prepare_measurements(csv_path: Path, div_start: Optional[int]) -> ProcessedMeasurements:
+def _resolve_brightfield_path(row: pd.Series, project_root: Path) -> Path:
+    rel = row.get('image_relpath')
+    if isinstance(rel, str) and rel:
+        candidate = (project_root / rel).expanduser().resolve()
+        if candidate.exists():
+            return candidate
+
+    image_path = row.get('image_path')
+    if isinstance(image_path, str):
+        candidate = Path(image_path).expanduser().resolve()
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(
+        f"Could not locate image for row with relpath={rel!r} and image_path={row.get('image_path')!r}"
+    )
+
+
+
+def _prepare_measurements(csv_path: Path, div_start: Optional[int], project_root: Path) -> ProcessedMeasurements:
     df = pd.read_csv(csv_path)
     if df.empty:
         raise ValueError("roi_measurements.csv is empty")
@@ -123,8 +143,11 @@ def _prepare_measurements(csv_path: Path, div_start: Optional[int]) -> Processed
     if df["day_index"].isna().any() or df["time_in_hours"].isna().any():
         missing = df[df["day_index"].isna() | df["time_in_hours"].isna()][["image_relpath", "day", "time"]]
         raise ValueError(
-            "Could not parse day/time for the following rows:\n" + missing.to_string(index=False)
+            "Could not parse day/time for the following rows:\n"
+            + missing.to_string(index=False)
         )
+
+    project_root = project_root.expanduser().resolve()
 
     df["time_hours"] = df["day_index"] * 24.0 + df["time_in_hours"]
     df["time_days"] = df["time_hours"] / 24.0
@@ -136,20 +159,65 @@ def _prepare_measurements(csv_path: Path, div_start: Optional[int]) -> Processed
         df["div_day"] = df["day_index"] + div_start
         df["age_div"] = df["time_days"] + div_start
 
+    brightfield_paths = [
+        _resolve_brightfield_path(row, project_root) for _, row in df.iterrows()
+    ]
+    df["brightfield_path"] = brightfield_paths
+
+    fluor_mean: list[float] = []
+    fluor_sum: list[float] = []
+
+    for path in brightfield_paths:
+        mask_path = path.with_name(f"{path.stem}_mask.tif")
+        if not mask_path.exists():
+            raise FileNotFoundError(f"Missing ROI mask for {path}")
+
+        fluor_path = path.parent / "fluorescence" / f"{path.stem}_mcherry.tif"
+        if not fluor_path.exists():
+            raise FileNotFoundError(f"Missing fluorescence image for {path}")
+
+        mask = read_mask(mask_path)
+        fluor_img = read_image(fluor_path).astype(np.float32, copy=False)
+        fluor_masked = apply_roi_mask(fluor_img, mask, outside="nan")
+
+        mean_val = float(np.nanmean(fluor_masked))
+        sum_val = float(np.nansum(fluor_masked))
+        fluor_mean.append(mean_val)
+        fluor_sum.append(sum_val)
+
+    df["fluor_mean_intensity"] = fluor_mean
+    df["fluor_sum_intensity"] = fluor_sum
+
     per_well = df.sort_values(["well", "time_hours"])
-    baseline = per_well.groupby("well")["area_px"].transform("first")
+    baseline_area = per_well.groupby("well")["area_px"].transform("first")
+    baseline_fluor = per_well.groupby("well")["fluor_mean_intensity"].transform("first")
+
     per_well = per_well.assign(
-        baseline_area_px=baseline,
-        area_fold_change=lambda x: np.where(x["baseline_area_px"] > 0, x["area_px"] / x["baseline_area_px"], np.nan),
+        baseline_area_px=baseline_area,
+        area_fold_change=lambda x: np.where(
+            x["baseline_area_px"] > 0,
+            x["area_px"] / x["baseline_area_px"],
+            np.nan,
+        ),
+        baseline_fluor_mean=baseline_fluor,
     )
+    per_well["fluor_fold_change"] = np.where(
+        per_well["baseline_fluor_mean"] > 0,
+        per_well["fluor_mean_intensity"] / per_well["baseline_fluor_mean"],
+        np.nan,
+    )
+
     df.loc[per_well.index, "baseline_area_px"] = per_well["baseline_area_px"].values
     df.loc[per_well.index, "area_fold_change"] = per_well["area_fold_change"].values
+    df.loc[per_well.index, "baseline_fluor_mean"] = per_well["baseline_fluor_mean"].values
+    df.loc[per_well.index, "fluor_fold_change"] = per_well["fluor_fold_change"].values
 
     return ProcessedMeasurements(
         data=df,
         time_labels=time_labels,
         div_start=div_start,
     )
+
 
 
 
@@ -261,6 +329,28 @@ def _plot_growth_boxplot(processed: ProcessedMeasurements, output_base: Path) ->
     )
 
 
+def _plot_fluor_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
+    return _plot_metric_boxplot(
+        processed,
+        value_column='fluor_mean_intensity',
+        output_base=output_base,
+        ylabel='mCherry fluorescence (a.u.)',
+        title='Fluorescence intensity per timepoint',
+    )
+
+
+
+def _plot_fluor_growth_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
+    return _plot_metric_boxplot(
+        processed,
+        value_column='fluor_fold_change',
+        output_base=output_base,
+        ylabel='Fluorescence fold-change (vs first time-point)',
+        title='Fluorescence growth per timepoint',
+        y_min=0.0,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     default_input = _default_roi_measurements_path()
     cfg = _load_config()
@@ -311,18 +401,26 @@ def main() -> None:
         output_dir = (project_root / "plots").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    processed = _prepare_measurements(input_path, args.div_start)
+    processed = _prepare_measurements(input_path, args.div_start, project_root)
 
     area_base = output_dir / f"{args.prefix}_area_boxplot"
     growth_base = output_dir / f"{args.prefix}_growth_boxplot"
+    fluor_base = output_dir / f"{args.prefix}_fluor_boxplot"
+    fluor_growth_base = output_dir / f"{args.prefix}_fluor_growth_boxplot"
 
     area_paths = _plot_area_boxplot(processed, area_base)
     growth_paths = _plot_growth_boxplot(processed, growth_base)
+    fluor_paths = _plot_fluor_boxplot(processed, fluor_base)
+    fluor_growth_paths = _plot_fluor_growth_boxplot(processed, fluor_growth_base)
 
     for path in area_paths:
         print(f"Saved area box plot to {path}")
     for path in growth_paths:
         print(f"Saved growth box plot to {path}")
+    for path in fluor_paths:
+        print(f"Saved fluorescence box plot to {path}")
+    for path in fluor_growth_paths:
+        print(f"Saved fluorescence growth box plot to {path}")
 
 
 if __name__ == "__main__":
