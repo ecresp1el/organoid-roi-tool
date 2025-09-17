@@ -14,5 +14,6 @@
   "save_1x4": true,
   "limit": 1,
   "store_within_project": true,
-  "output_subdir": "dcxspot"
+  "output_subdir": "dcxspot",
+  "div_start": 11
 }

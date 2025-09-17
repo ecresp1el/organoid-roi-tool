@@ -306,8 +306,66 @@ def _plot_growth_curve(processed: ProcessedMeasurements, output_path: Path) -> N
         plt.close(fig)
 
 
+
+def _plot_area_boxplots(processed: ProcessedMeasurements, output_path: Path) -> None:
+    df = processed.data
+    labels_df = processed.time_labels
+
+    if labels_df.empty:
+        raise ValueError("No time labels found for box plot")
+
+    data = []
+    tick_labels = []
+    for row in labels_df.itertuples():
+        values = df.loc[df["time_hours"] == row.time_hours, "area_px"].dropna()
+        if values.empty:
+            continue
+        data.append(values.values)
+        tick_labels.append(row.label)
+
+    if not data:
+        raise ValueError("No area measurements available to plot")
+
+    positions = np.arange(len(data))
+
+    with minimal_style_context():
+        fig, ax = plt.subplots()
+        boxprops = dict(linewidth=1.0, facecolor="#1f77b4", alpha=0.25)
+        medianprops = dict(color="#1f77b4", linewidth=1.5)
+        whiskerprops = dict(color="#8c8c8c", linewidth=1.0)
+        capprops = dict(color="#8c8c8c", linewidth=1.0)
+
+        ax.boxplot(
+            data,
+            positions=positions,
+            widths=0.6,
+            patch_artist=True,
+            boxprops=boxprops,
+            medianprops=medianprops,
+            whiskerprops=whiskerprops,
+            capprops=capprops,
+            flierprops=dict(marker="o", markersize=3, markerfacecolor="#1f77b4", markeredgecolor="none", alpha=0.4),
+        )
+
+        ax.set_xticks(positions)
+        ax.set_xticklabels(tick_labels, rotation=45, ha="right")
+        if processed.div_start is not None:
+            ax.set_xlabel("Organoid age (DIV)")
+        else:
+            ax.set_xlabel("Time point")
+        ax.set_ylabel("Organoid ROI area (pixels)")
+        ax.set_title("Organoid area distribution per timepoint")
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(6))
+
+        fig.tight_layout()
+        fig.savefig(output_path, dpi=300)
+        plt.close(fig)
+
+
+
 def parse_args() -> argparse.Namespace:
     default_input = _default_roi_measurements_path()
+    cfg = _load_config()
 
     parser = argparse.ArgumentParser(description="Plot organoid ROI size and growth curves with a consistent style.")
     parser.add_argument(
@@ -323,6 +381,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Directory where plots will be written. Defaults to <project-root>/plots.",
     )
+    parser.add_argument(
+        "--div-start",
+        type=int,
+        default=cfg.get("div_start"),
+        help="DIV value corresponding to day_00 (e.g., 11 for DIV11). Defaults to dcxspot_config.json if present.",
+    )
+
     parser.add_argument(
         "--prefix",
         default="organoid",
@@ -348,16 +413,19 @@ def main() -> None:
         output_dir = (project_root / "plots").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    processed = _prepare_measurements(input_path)
+    processed = _prepare_measurements(input_path, args.div_start)
 
     area_plot_path = output_dir / f"{args.prefix}_area_over_time.png"
     growth_plot_path = output_dir / f"{args.prefix}_growth_curve.png"
+    box_plot_path = output_dir / f"{args.prefix}_area_boxplot.png"
 
     _plot_area_over_time(processed, area_plot_path)
     _plot_growth_curve(processed, growth_plot_path)
+    _plot_area_boxplots(processed, box_plot_path)
 
     print(f"Saved area plot to {area_plot_path}")
     print(f"Saved growth curve plot to {growth_plot_path}")
+    print(f"Saved area box plot to {box_plot_path}")
 
 
 if __name__ == "__main__":
