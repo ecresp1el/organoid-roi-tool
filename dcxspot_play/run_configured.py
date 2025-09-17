@@ -27,11 +27,15 @@ def main() -> int:
     project_root = Path(cfg["project_root"])
     output_root = Path(cfg["output_root"])
 
+    store_within = cfg.get("store_within_project", True)
+    output_subdir = cfg.get("output_subdir", "dcxspot") if store_within else None
+
     summary = run_project(
         project_root=project_root,
         fluor_subdir=cfg.get("fluor_subdir", "fluorescence"),
         fluor_suffix=cfg.get("fluor_suffix", "_mcherry.tif"),
-        output_root=output_root,
+        output_root=(output_root if not store_within else None),
+        output_subdir=output_subdir,
         limit=cfg.get("limit"),
         min_area=int(cfg.get("min_area", 24)),
         max_area=int(cfg.get("max_area", 8000)),

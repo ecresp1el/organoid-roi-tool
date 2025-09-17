@@ -12,5 +12,7 @@
     99
   ],
   "save_1x4": true,
-  "limit": 1
+  "limit": 1,
+  "store_within_project": true,
+  "output_subdir": "dcxspot"
 }

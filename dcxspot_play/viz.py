@@ -7,6 +7,7 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import Normalize
+import matplotlib.patheffects as patheffects
 from skimage import segmentation
 
 
@@ -33,7 +34,7 @@ def _show_masked(ax, img: np.ndarray, title: str, cmap: str = "gray") -> None:
 
 
 def _overlay_canvas_setup() -> plt.Axes:
-    fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
+    fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
     ax.axis("off")
     return ax
 
@@ -68,7 +69,7 @@ def save_overlay_ids(
     if mcherry_masked.shape != labels.shape:
         raise ValueError("mCherry image and labels must have the same shape for overlay")
 
-    fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
+    fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
     cmap = plt.get_cmap("gray").copy()
     cmap.set_bad(color=(0, 0, 0, 0))
     stretched = _percentile_stretch(mcherry_masked)
@@ -87,10 +88,11 @@ def save_overlay_ids(
             y,
             str(int(cluster_id)),
             color="white",
-            fontsize=10,
+            fontsize=9,
             ha="center",
             va="center",
             weight="bold",
+            path_effects=[patheffects.withStroke(linewidth=2, foreground="black")],
         )
 
     legend_text = f"N clusters: {n_final}\notsu = {otsu_thr:.4g}"
@@ -137,7 +139,7 @@ def save_panel_1x3(
     out_png: str | Path,
 ) -> None:
     """Save a 1×3 QC panel with BF, mCherry, and cluster overlay."""
-    fig, axes = plt.subplots(1, 3, figsize=(8, 3), dpi=300)
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4), dpi=300)
 
     _show_masked(axes[0], bf_masked, "BF (masked)")
     _show_masked(axes[1], mcherry_masked, "mCherry (masked)")
@@ -161,7 +163,7 @@ def save_panel_1x4(
     out_png: str | Path,
 ) -> None:
     """Save a 1×4 QC panel that also includes the binary DCX mask."""
-    fig, axes = plt.subplots(1, 4, figsize=(10.5, 3), dpi=300)
+    fig, axes = plt.subplots(1, 4, figsize=(14, 4), dpi=300)
 
     _show_masked(axes[0], bf_masked, "BF (masked)")
     _show_masked(axes[1], mcherry_masked, "mCherry (masked)")

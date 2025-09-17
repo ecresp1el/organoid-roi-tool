@@ -40,6 +40,7 @@ def run_project(
     fluor_subdir: str = "fluorescence",
     fluor_suffix: str = "_mcherry.tif",
     output_root: Path | None = None,
+    output_subdir: str | None = "dcxspot",
     limit: int | None = None,
     min_area: int = 24,
     max_area: int = 8000,
@@ -50,12 +51,10 @@ def run_project(
     verbose: bool = True,
 ) -> RunSummary:
     project_root = Path(project_root).expanduser().resolve()
-    output_root = (
-        Path(output_root).expanduser().resolve()
-        if output_root is not None
-        else project_root / "dcxspot_outputs"
-    )
-    output_root.mkdir(parents=True, exist_ok=True)
+    base_output_root = None
+    if output_root is not None:
+        base_output_root = Path(output_root).expanduser().resolve()
+        base_output_root.mkdir(parents=True, exist_ok=True)
 
     inspected = 0
     processed = 0
@@ -70,9 +69,16 @@ def run_project(
             break
         inspected += 1
 
+        fluor_folder = mask_path.parent / fluor_subdir
+        if not fluor_folder.exists():
+            if verbose:
+                print(f"[skip] missing fluorescence folder: {fluor_folder}")
+            skipped_missing += 1
+            continue
+
         if not mcherry_path.exists():
             if verbose:
-                print(f"[skip] missing fluorescence: {mcherry_path}")
+                print(f"[skip] missing fluorescence file: {mcherry_path}")
             skipped_missing += 1
             continue
         if not bf_path.exists():
@@ -81,8 +87,16 @@ def run_project(
             skipped_missing += 1
             continue
 
-        rel_dir = mask_path.parent.relative_to(project_root)
-        out_dir = output_root / rel_dir
+        if output_subdir is not None:
+            out_dir = mask_path.parent / output_subdir
+        elif base_output_root is not None:
+            rel_dir = mask_path.parent.relative_to(project_root)
+            out_dir = base_output_root / rel_dir
+        else:
+            rel_dir = mask_path.parent.relative_to(project_root)
+            fallback_root = project_root / "dcxspot_outputs"
+            out_dir = fallback_root / rel_dir
+            fallback_root.mkdir(parents=True, exist_ok=True)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         params = {
@@ -110,18 +124,25 @@ def run_project(
                 f"      clusters={result['qc']['n_final']}  panel={result['panel_1x3_path']}"
             )
 
+    if output_subdir is not None:
+        final_output = project_root
+    elif base_output_root is not None:
+        final_output = base_output_root
+    else:
+        final_output = project_root / "dcxspot_outputs"
+
     if verbose:
         print("\nSummary")
         print(f"  inspected : {inspected}")
         print(f"  processed : {processed}")
         print(f"  skipped   : {skipped_missing}")
-        print(f"  outputs   : {output_root}")
+        print(f"  outputs   : {final_output}")
 
     return RunSummary(
         inspected=inspected,
         processed=processed,
         skipped=skipped_missing,
-        output_root=output_root,
+        output_root=final_output,
     )
 
 
