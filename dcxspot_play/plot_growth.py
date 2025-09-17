@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
+import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -381,6 +382,83 @@ def _plot_fluor_density_growth_boxplot(processed: ProcessedMeasurements, output_
     )
 
 
+
+def _normalize_display_image(img: np.ndarray) -> np.ndarray:
+    arr = np.asarray(img, dtype=np.float32)
+    if arr.size == 0:
+        return arr
+    lo, hi = np.percentile(arr, [2, 98])
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo = np.nanmin(arr)
+        hi = np.nanmax(arr)
+        if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+            return np.zeros_like(arr, dtype=np.float32)
+    norm = (arr - lo) / (hi - lo)
+    return np.clip(norm, 0.0, 1.0)
+
+
+def _generate_well_panels(
+    processed: ProcessedMeasurements,
+    project_root: Path,
+    output_dir: Path,
+    prefix: str,
+) -> List[Path]:
+    saved_paths: List[Path] = []
+    df = processed.data
+    label_lookup = processed.time_labels.set_index('time_hours')['label']
+
+    for well, per_well in df.groupby('well', sort=True):
+        per_well = per_well.sort_values('time_hours')
+        n_time = len(per_well)
+        if n_time == 0:
+            continue
+
+        with minimal_style_context():
+            fig_width = max(2.2 * n_time, 6.0)
+            fig, axes = plt.subplots(2, n_time, figsize=(fig_width, 5.0))
+            axes = np.asarray(axes)
+            if axes.ndim == 1:
+                axes = axes.reshape(2, 1)
+
+            for idx, (row_idx, row) in enumerate(per_well.iterrows()):
+                brightfield_path = Path(row['brightfield_path'])
+                mask_path = brightfield_path.with_name(f"{brightfield_path.stem}_mask.tif")
+                fluor_path = brightfield_path.parent / 'fluorescence' / f"{brightfield_path.stem}_mcherry.tif"
+
+                brightfield_img = read_image(brightfield_path)
+                mask = read_mask(mask_path)
+                fluor_img = read_image(fluor_path).astype(np.float32, copy=False)
+                fluor_masked = apply_roi_mask(fluor_img, mask, outside='zero')
+
+                display_bf = _normalize_display_image(brightfield_img)
+                display_fluor = _normalize_display_image(fluor_masked)
+                display_fluor = np.where(mask, display_fluor, 0.0)
+
+                ax_bf = axes[0, idx]
+                ax_fluor = axes[1, idx]
+
+                ax_bf.imshow(display_bf, cmap=cm.gray, interpolation='nearest')
+                ax_bf.contour(mask, levels=[0.5], colors='#ff6b6b', linewidths=0.8)
+                ax_bf.set_xticks([])
+                ax_bf.set_yticks([])
+                time_label = label_lookup.get(row['time_hours'], f"{row['time_hours']:.1f} h")
+                ax_bf.set_title(time_label, fontsize=11)
+
+                ax_fluor.imshow(display_fluor, cmap=cm.magma, interpolation='nearest')
+                ax_fluor.set_xticks([])
+                ax_fluor.set_yticks([])
+
+            axes[0, 0].set_ylabel('Brightfield', fontsize=11)
+            axes[1, 0].set_ylabel('mCherry', fontsize=11)
+            fig.suptitle(f"Well {well}", x=0.01, ha='left', fontsize=14)
+            fig.tight_layout(rect=(0, 0, 1, 0.96))
+
+            output_base = output_dir / f"{prefix}_well_{well}_panel"
+            saved_paths.extend(_save_multi_format(fig, output_base))
+
+    return saved_paths
+
+
 def parse_args() -> argparse.Namespace:
     default_input = _default_roi_measurements_path()
     cfg = _load_config()
@@ -446,6 +524,7 @@ def main() -> None:
     fluor_total_growth_paths = _plot_fluor_total_growth_boxplot(processed, fluor_total_growth_base)
     fluor_density_paths = _plot_fluor_density_boxplot(processed, fluor_density_base)
     fluor_density_growth_paths = _plot_fluor_density_growth_boxplot(processed, fluor_density_growth_base)
+    panel_paths = _generate_well_panels(processed, project_root, output_dir, args.prefix)
 
     for path in area_paths:
         print(f"Saved area box plot to {path}")
@@ -459,6 +538,9 @@ def main() -> None:
         print(f"Saved area-normalised fluorescence box plot to {path}")
     for path in fluor_density_growth_paths:
         print(f"Saved area-normalised fluorescence growth box plot to {path}")
+    for path in panel_paths:
+        if Path(path).suffix == '.png':
+            print(f"Saved well panel to {path}")
 
 
 if __name__ == "__main__":
