@@ -1,18 +1,49 @@
 #!/usr/bin/env python3
-"""Copy fluorescence TIFFs into an organized ROI project and apply existing masks.
+"""Copy fluorescence TIFFs into an organized ROI project using existing polygon masks.
 
-The script searches a project folder for ROI mask files (``*_mask.tif``) that were
-created by the organoid ROI tool. For every mask, it looks up the matching
-fluorescence image in a source directory (flat folder of TIFFs) and then:
+This utility bridges manually segmented brightfield projects created with the Organoid ROI tool
+and a folder of fluorescence-channel TIFFs exported as a flat list of files.
 
-1. Copies the raw fluorescence TIFF into the same project timepoint folder,
-   inside a channel-specific subdirectory.
-2. Applies the ROI mask to generate a full-size masked fluorescence TIFF.
-3. Crops the masked fluorescence image to the ROI bounding box and saves it.
+Required layout and naming conventions
+--------------------------------------
+* ``project`` must point to a folder that already contains ``wells/ROWCOL/day_XX/HHhMMm/`` directories.
+  Each timepoint folder is expected to hold the brightfield image, its mask ``*_mask.tif``, and ROI artefacts.
+* ``fluorescence`` must point to a *flat* directory that stores fluorescence TIFFs whose base filename
+  matches the brightfield files (e.g. ``VID..._A10_1_00d00h00m.tif``). Subfolders are ignored.
+* Mask and fluorescence images must share the same width/height; multi-frame TIFFs are supported
+  and are masked frame-by-frame.
+* The script never deletes or moves the originals; it only copies files into the project and writes new derivatives.
 
-No files are deleted or moved from their original locations; fluorescence TIFFs
-are copied into the project. Re-running the script is safe: it can skip existing
-outputs unless ``--overwrite`` is provided.
+Products written back into the project
+--------------------------------------
+For each mask that has a matching fluorescence image, the following files are emitted inside the
+corresponding timepoint folder under ``<target-subdir>/`` (defaults to ``fluorescence``):
+
+1. ``<base>_<channel>.tif``                – raw fluorescence copy (metadata preserved where possible).
+2. ``<base>_<channel>_masked.tif``         – fluorescence with pixels outside the mask zeroed.
+3. ``<base>_<channel>_masked_cropped.tif`` – minimal bounding-box crop around the ROI.
+
+Files are skipped when all three already exist unless ``--overwrite`` is specified.
+
+Runtime requirements and assumptions
+------------------------------------
+* Python 3.10+ with ``numpy`` and ``tifffile`` available in the active environment.
+* ``Pillow`` (PIL) is optional but enables decoding LZW-compressed TIFFs when ``imagecodecs`` is missing.
+* Sufficient free disk space inside the project folders to accommodate copied fluorescence data.
+* Masks are binary (non-zero == inside ROI), two-dimensional, and non-empty.
+
+Example
+-------
+``
+python tools/copy_fluorescence_from_masks.py \
+  /path/to/project_root \
+  /path/to/fluorescence_folder \
+  --channel mcherry \
+  --target-subdir fluorescence_mcherry
+```
+
+Re-running the script is safe: it will skip completed triplets unless ``--overwrite`` is set. Use
+``--dry-run`` to preview the work and ``--limit`` to restrict processing to the first *N* masks.
 """
 from __future__ import annotations
 
