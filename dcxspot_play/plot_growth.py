@@ -130,6 +130,7 @@ def _resolve_brightfield_path(row: pd.Series, project_root: Path) -> Path:
 
 
 
+
 def _prepare_measurements(csv_path: Path, div_start: Optional[int], project_root: Path) -> ProcessedMeasurements:
     df = pd.read_csv(csv_path)
     if df.empty:
@@ -185,12 +186,13 @@ def _prepare_measurements(csv_path: Path, div_start: Optional[int], project_root
         fluor_mean.append(mean_val)
         fluor_sum.append(sum_val)
 
-    df["fluor_mean_intensity"] = fluor_mean
+    df["fluor_density_intensity"] = fluor_mean
     df["fluor_sum_intensity"] = fluor_sum
 
     per_well = df.sort_values(["well", "time_hours"])
     baseline_area = per_well.groupby("well")["area_px"].transform("first")
-    baseline_fluor = per_well.groupby("well")["fluor_mean_intensity"].transform("first")
+    baseline_fluor_sum = per_well.groupby("well")["fluor_sum_intensity"].transform("first")
+    baseline_fluor_density = per_well.groupby("well")["fluor_density_intensity"].transform("first")
 
     per_well = per_well.assign(
         baseline_area_px=baseline_area,
@@ -199,27 +201,32 @@ def _prepare_measurements(csv_path: Path, div_start: Optional[int], project_root
             x["area_px"] / x["baseline_area_px"],
             np.nan,
         ),
-        baseline_fluor_mean=baseline_fluor,
+        baseline_fluor_sum=baseline_fluor_sum,
+        baseline_fluor_density=baseline_fluor_density,
     )
-    per_well["fluor_fold_change"] = np.where(
-        per_well["baseline_fluor_mean"] > 0,
-        per_well["fluor_mean_intensity"] / per_well["baseline_fluor_mean"],
+    per_well["fluor_sum_fold_change"] = np.where(
+        per_well["baseline_fluor_sum"] > 0,
+        per_well["fluor_sum_intensity"] / per_well["baseline_fluor_sum"],
+        np.nan,
+    )
+    per_well["fluor_density_fold_change"] = np.where(
+        per_well["baseline_fluor_density"] > 0,
+        per_well["fluor_density_intensity"] / per_well["baseline_fluor_density"],
         np.nan,
     )
 
     df.loc[per_well.index, "baseline_area_px"] = per_well["baseline_area_px"].values
     df.loc[per_well.index, "area_fold_change"] = per_well["area_fold_change"].values
-    df.loc[per_well.index, "baseline_fluor_mean"] = per_well["baseline_fluor_mean"].values
-    df.loc[per_well.index, "fluor_fold_change"] = per_well["fluor_fold_change"].values
+    df.loc[per_well.index, "baseline_fluor_sum"] = per_well["baseline_fluor_sum"].values
+    df.loc[per_well.index, "baseline_fluor_density"] = per_well["baseline_fluor_density"].values
+    df.loc[per_well.index, "fluor_sum_fold_change"] = per_well["fluor_sum_fold_change"].values
+    df.loc[per_well.index, "fluor_density_fold_change"] = per_well["fluor_density_fold_change"].values
 
     return ProcessedMeasurements(
         data=df,
         time_labels=time_labels,
         div_start=div_start,
     )
-
-
-
 
 
 
@@ -329,24 +336,47 @@ def _plot_growth_boxplot(processed: ProcessedMeasurements, output_base: Path) ->
     )
 
 
-def _plot_fluor_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
+def _plot_fluor_total_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
     return _plot_metric_boxplot(
         processed,
-        value_column='fluor_mean_intensity',
+        value_column='fluor_sum_intensity',
         output_base=output_base,
-        ylabel='mCherry fluorescence (a.u.)',
-        title='Fluorescence intensity per timepoint',
+        ylabel='Total mCherry fluorescence (a.u.)',
+        title='Total fluorescence per timepoint',
     )
 
 
 
-def _plot_fluor_growth_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
+def _plot_fluor_total_growth_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
     return _plot_metric_boxplot(
         processed,
-        value_column='fluor_fold_change',
+        value_column='fluor_sum_fold_change',
         output_base=output_base,
-        ylabel='Fluorescence fold-change (vs first time-point)',
-        title='Fluorescence growth per timepoint',
+        ylabel='Total fluorescence fold-change (vs first time-point)',
+        title='Total fluorescence growth per timepoint',
+        y_min=0.0,
+    )
+
+
+
+def _plot_fluor_density_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
+    return _plot_metric_boxplot(
+        processed,
+        value_column='fluor_density_intensity',
+        output_base=output_base,
+        ylabel='Fluorescence per area (a.u. per pixel)',
+        title='Area-normalised fluorescence per timepoint',
+    )
+
+
+
+def _plot_fluor_density_growth_boxplot(processed: ProcessedMeasurements, output_base: Path) -> List[Path]:
+    return _plot_metric_boxplot(
+        processed,
+        value_column='fluor_density_fold_change',
+        output_base=output_base,
+        ylabel='Area-normalised fluorescence fold-change',
+        title='Area-normalised fluorescence growth per timepoint',
         y_min=0.0,
     )
 
@@ -405,22 +435,30 @@ def main() -> None:
 
     area_base = output_dir / f"{args.prefix}_area_boxplot"
     growth_base = output_dir / f"{args.prefix}_growth_boxplot"
-    fluor_base = output_dir / f"{args.prefix}_fluor_boxplot"
-    fluor_growth_base = output_dir / f"{args.prefix}_fluor_growth_boxplot"
+    fluor_total_base = output_dir / f"{args.prefix}_fluor_total_boxplot"
+    fluor_total_growth_base = output_dir / f"{args.prefix}_fluor_total_growth_boxplot"
+    fluor_density_base = output_dir / f"{args.prefix}_fluor_density_boxplot"
+    fluor_density_growth_base = output_dir / f"{args.prefix}_fluor_density_growth_boxplot"
 
     area_paths = _plot_area_boxplot(processed, area_base)
     growth_paths = _plot_growth_boxplot(processed, growth_base)
-    fluor_paths = _plot_fluor_boxplot(processed, fluor_base)
-    fluor_growth_paths = _plot_fluor_growth_boxplot(processed, fluor_growth_base)
+    fluor_total_paths = _plot_fluor_total_boxplot(processed, fluor_total_base)
+    fluor_total_growth_paths = _plot_fluor_total_growth_boxplot(processed, fluor_total_growth_base)
+    fluor_density_paths = _plot_fluor_density_boxplot(processed, fluor_density_base)
+    fluor_density_growth_paths = _plot_fluor_density_growth_boxplot(processed, fluor_density_growth_base)
 
     for path in area_paths:
         print(f"Saved area box plot to {path}")
     for path in growth_paths:
         print(f"Saved growth box plot to {path}")
-    for path in fluor_paths:
-        print(f"Saved fluorescence box plot to {path}")
-    for path in fluor_growth_paths:
-        print(f"Saved fluorescence growth box plot to {path}")
+    for path in fluor_total_paths:
+        print(f"Saved total fluorescence box plot to {path}")
+    for path in fluor_total_growth_paths:
+        print(f"Saved total fluorescence growth box plot to {path}")
+    for path in fluor_density_paths:
+        print(f"Saved area-normalised fluorescence box plot to {path}")
+    for path in fluor_density_growth_paths:
+        print(f"Saved area-normalised fluorescence growth box plot to {path}")
 
 
 if __name__ == "__main__":
