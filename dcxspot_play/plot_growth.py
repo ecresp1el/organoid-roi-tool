@@ -1,4 +1,23 @@
-"""Plot organoid ROI growth metrics from roi_measurements.csv."""
+"""Generate consistent growth plots and per-well panels from ROI measurements.
+
+This module loads the project-level ``roi_measurements.csv`` produced by the
+Organoid ROI tool, adds fluorescence metrics derived from the saved ROI masks
+and fluorescence images, and emits a full report of box plots and image panels.
+
+Key outputs (all written to ``<project-root>/plots`` unless overridden):
+
+* PNG/PDF/SVG box plots for organoid area and area fold-change.
+* PNG/PDF/SVG box plots for total mCherry fluorescence and its fold-change.
+* PNG/PDF/SVG box plots for area-normalised mCherry fluorescence and its
+  fold-change (fluorescence per pixel).
+* For each well, a three-row montage (PNG/PDF/SVG) containing:
+  - Brightfield ROI crop with the ROI outline.
+  - Raw mCherry intensities (absolute colorbar, shared across the row).
+  - ROI-scaled mCherry intensities (0–1 colorbar shared across the row).
+
+Plot styling is centralised in :mod:`dcxspot_play.plotting` to ensure a minimal
+and repeatable aesthetic across all figures.
+"""
 from __future__ import annotations
 
 import argparse
@@ -135,6 +154,22 @@ def _resolve_brightfield_path(row: pd.Series, project_root: Path) -> Path:
 
 
 def _prepare_measurements(csv_path: Path, div_start: Optional[int], project_root: Path) -> ProcessedMeasurements:
+    """Load roi_measurements.csv and decorate it with fluorescence metrics.
+
+    Parameters
+    ----------
+    csv_path
+        Path to ``roi_measurements.csv``.
+    div_start
+        DIV value aligned with ``day_00`` (may be ``None`` if not supplied).
+    project_root
+        Resolved project root; used to locate matching TIFF + ROI mask files.
+
+    Returns
+    -------
+    ProcessedMeasurements
+        Container with the enriched dataframe, time labels, and DIV metadata.
+    """
     df = pd.read_csv(csv_path)
     if df.empty:
         raise ValueError("roi_measurements.csv is empty")
