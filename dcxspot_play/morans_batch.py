@@ -207,8 +207,12 @@ def process_row(
         random_state=random_state,
     )
 
+    time_str = row.get("time", "") or ""
+    div_day = row.get("div_day")
+    if pd.notna(div_day):
+        time_str = f"DIV{int(div_day)} {time_str}"
     panel_entry: Dict[str, object] = {
-        "time_label": row.get("time", ""),
+        "time_label": time_str.strip(),
         "time_hours": row.get("time_hours"),
     }
     local_results: Dict[str, Path] = {}
@@ -220,8 +224,27 @@ def process_row(
         else np.zeros_like(mask, dtype=bool)
     )
 
+    bf_norm = _normalize_for_display(brightfield, mask)
+    bf_norm = np.where(mask, bf_norm, 0.0)
     base_norm = _normalize_for_display(fluor_masked, mask)
     base_norm = np.where(mask, base_norm, 0.0)
+
+    y0, y1, x0, x1 = _roi_bbox(mask)
+    mask_crop = mask[y0:y1, x0:x1]
+    bf_crop = bf_norm[y0:y1, x0:x1].copy()
+    bf_crop[~mask_crop] = 0.0
+    raw_display = base_norm[y0:y1, x0:x1].copy()
+    raw_display[~mask_crop] = 0.0
+    detection_crop = (detection_mask & mask)[y0:y1, x0:x1]
+
+    panel_entry.update(
+        {
+            "bf_display": bf_crop,
+            "raw_display": raw_display,
+            "mask_crop": mask_crop,
+            "island_mask": detection_crop,
+        }
+    )
 
     if heatmap_dir or overlay_dir or local_permutations > 0:
         _, _, _, _, _, xc, neighbor_sum_xc, _ = morans_i_snapshot(
@@ -256,17 +279,10 @@ def process_row(
             local_results["local_pmap"] = p_path
             p_map = p_vals
 
-        y0, y1, x0, x1 = _roi_bbox(mask)
-        mask_crop = mask[y0:y1, x0:x1]
-        raw_display = base_norm[y0:y1, x0:x1].copy()
-        raw_display[~mask_crop] = 0.0
-
         local_map = np.where(mask, local_map, np.nan)
         local_raw_crop = local_map[y0:y1, x0:x1]
         local_norm_crop = local_norm[y0:y1, x0:x1]
         local_norm_crop = np.where(mask_crop, local_norm_crop, np.nan)
-
-        detection_crop = (detection_mask & mask)[y0:y1, x0:x1]
 
         p_crop = None
         if p_map is not None:
@@ -276,25 +292,14 @@ def process_row(
 
         panel_entry.update(
             {
-                "raw_display": raw_display,
-                "mask_crop": mask_crop,
-                "island_mask": detection_crop,
                 "local_raw": local_raw_crop,
                 "local_norm": local_norm_crop,
                 "p_map": p_crop,
             }
         )
     else:
-        y0, y1, x0, x1 = _roi_bbox(mask)
-        mask_crop = mask[y0:y1, x0:x1]
-        raw_display = base_norm[y0:y1, x0:x1]
-        raw_display[~mask_crop] = 0.0
-        detection_crop = (detection_mask & mask)[y0:y1, x0:x1]
         panel_entry.update(
             {
-                "raw_display": raw_display,
-                "mask_crop": mask_crop,
-                "island_mask": detection_crop,
                 "local_raw": None,
                 "local_norm": None,
                 "p_map": None,
@@ -319,22 +324,20 @@ def _save_well_panel(
     entries: list[Dict[str, object]],
     panel_dir: Path,
 ) -> None:
-    """Render the multi-row workflow panel for a single well.
-
-    Rows (top → bottom): raw fluorescence, ROI overlay, detected islands,
-    Local Moran (raw values with shared colour scale), Local Moran scaled to
-    0–1 for display, and permutation-significance overlay (p < 0.05).  Each
-    column corresponds to a time point and carries its label in the title.
-    """
+    """Render the multi-row workflow panel for a single well."""
 
     filtered = [e for e in entries if e.get("raw_display") is not None]
     if not filtered:
         return
 
-    filtered.sort(key=lambda e: (e.get("time_hours") if e.get("time_hours") is not None else float("inf")))
+    filtered.sort(
+        key=lambda e: (
+            e.get("time_hours") if e.get("time_hours") is not None else float("inf")
+        )
+    )
     n_time = len(filtered)
 
-    local_vals = []
+    local_vals: list[np.ndarray] = []
     for entry in filtered:
         arr = entry.get("local_raw")
         if arr is not None:
@@ -342,28 +345,34 @@ def _save_well_panel(
             if vals.size:
                 local_vals.append(vals)
     if local_vals:
-        raw_min = min(v.min() for v in local_vals)
-        raw_max = max(v.max() for v in local_vals)
-        if raw_min == raw_max:
-            raw_min -= 1.0
-            raw_max += 1.0
+        all_vals = np.concatenate(local_vals)
+        mean = float(np.nanmean(all_vals))
+        std = float(np.nanstd(all_vals))
+        clip = std * 2.0 if std > 0 else float(np.nanmax(np.abs(all_vals)))
+        clip = clip if clip > 0 else 1.0
+        vmin = mean - clip
+        vmax = mean + clip
     else:
-        raw_min, raw_max = -1.0, 1.0
-    norm_raw = colors.Normalize(vmin=raw_min, vmax=raw_max)
+        vmin, vmax = -1.0, 1.0
+    norm_raw = colors.TwoSlopeNorm(vcenter=0.0, vmin=vmin, vmax=vmax)
 
-    fig_width = max(2.4 * n_time, 7.0)
-    fig, axes = plt.subplots(6, n_time, figsize=(fig_width, 10.0))
+    fig_width = max(2.5 * n_time, 8.0)
+    fig, axes = plt.subplots(7, n_time, figsize=(fig_width, 12.0))
     axes = np.asarray(axes)
     if axes.ndim == 1:
-        axes = axes.reshape(6, 1)
+        axes = axes.reshape(7, 1)
 
     cmap_gray = colormaps.get_cmap("gray")
-    cmap_local = colormaps.get_cmap("viridis")
+    cmap_local = colormaps.get_cmap("coolwarm")
+    cmap_scaled = colormaps.get_cmap("viridis")
+
     last_local_raw_im = None
     last_local_scaled_im = None
+    last_sig_im = None
     has_sig = False
 
     for idx, entry in enumerate(filtered):
+        bf_display = entry.get("bf_display")
         raw_display = entry.get("raw_display")
         mask_crop = entry.get("mask_crop")
         island_mask = entry.get("island_mask")
@@ -372,15 +381,18 @@ def _save_well_panel(
         p_map = entry.get("p_map")
         time_label = entry.get("time_label") or ""
 
-        # Row 1: raw fluorescence (ROI-only grayscale)
-        ax_raw = axes[0, idx]
+        ax_bf = axes[0, idx]
+        ax_bf.imshow(bf_display, cmap=cmap_gray, vmin=0.0, vmax=1.0, interpolation="nearest")
+        ax_bf.set_xticks([])
+        ax_bf.set_yticks([])
+        ax_bf.set_title(time_label, fontsize=11)
+
+        ax_raw = axes[1, idx]
         ax_raw.imshow(raw_display, cmap=cmap_gray, vmin=0.0, vmax=1.0, interpolation="nearest")
         ax_raw.set_xticks([])
         ax_raw.set_yticks([])
-        ax_raw.set_title(time_label, fontsize=11)
 
-        # Row 2: ROI overlay (cyan)
-        ax_roi = axes[1, idx]
+        ax_roi = axes[2, idx]
         roi_rgb = np.repeat(raw_display[..., None], 3, axis=-1)
         roi_rgb[~mask_crop] = 0.0
         roi_rgb[mask_crop] = (1 - 0.6) * roi_rgb[mask_crop] + 0.6 * np.array([0.0, 1.0, 1.0])
@@ -388,18 +400,17 @@ def _save_well_panel(
         ax_roi.set_xticks([])
         ax_roi.set_yticks([])
 
-        # Row 3: detected clusters (magenta overlay)
-        ax_clusters = axes[2, idx]
+        ax_clusters = axes[3, idx]
         clusters_rgb = np.repeat(raw_display[..., None], 3, axis=-1)
         clusters_rgb[~mask_crop] = 0.0
         if island_mask is not None and island_mask.any():
             clusters_rgb[island_mask] = (1 - 0.6) * clusters_rgb[island_mask] + 0.6 * np.array([1.0, 0.0, 1.0])
+            ax_clusters.contour(island_mask.astype(float), levels=[0.5], colors="#ff00ff", linewidths=0.8)
         ax_clusters.imshow(clusters_rgb, interpolation="nearest")
         ax_clusters.set_xticks([])
         ax_clusters.set_yticks([])
 
-        # Row 4: Local Moran raw values with actual scale
-        ax_raw_moran = axes[3, idx]
+        ax_raw_moran = axes[4, idx]
         if local_raw is not None:
             local_raw_plot = np.where(mask_crop, local_raw, np.nan)
             last_local_raw_im = ax_raw_moran.imshow(local_raw_plot, cmap=cmap_local, norm=norm_raw, interpolation="nearest")
@@ -408,60 +419,62 @@ def _save_well_panel(
         ax_raw_moran.set_xticks([])
         ax_raw_moran.set_yticks([])
 
-        # Row 5: Local Moran scaled 0-1
-        ax_scaled = axes[4, idx]
+        ax_scaled = axes[5, idx]
         if local_norm is not None:
-            last_local_scaled_im = ax_scaled.imshow(np.where(mask_crop, local_norm, np.nan), cmap=cmap_local, vmin=0.0, vmax=1.0, interpolation="nearest")
+            last_local_scaled_im = ax_scaled.imshow(np.where(mask_crop, local_norm, np.nan), cmap=cmap_scaled, vmin=0.0, vmax=1.0, interpolation="nearest")
         else:
-            last_local_scaled_im = ax_scaled.imshow(np.zeros_like(raw_display), cmap=cmap_local, vmin=0.0, vmax=1.0, interpolation="nearest")
+            last_local_scaled_im = ax_scaled.imshow(np.zeros_like(raw_display), cmap=cmap_scaled, vmin=0.0, vmax=1.0, interpolation="nearest")
         ax_scaled.set_xticks([])
         ax_scaled.set_yticks([])
 
-        # Row 6: significance overlay (p < 0.05)
-        ax_sig = axes[5, idx]
-        sig_rgb = np.repeat(raw_display[..., None], 3, axis=-1)
-        sig_rgb[~mask_crop] = 0.0
+        ax_sig = axes[6, idx]
+        ax_sig.imshow(raw_display, cmap=cmap_gray, vmin=0.0, vmax=1.0, interpolation="nearest")
         if p_map is not None and local_raw is not None:
             sig_mask = (p_map < 0.05) & mask_crop
             if np.any(sig_mask):
                 has_sig = True
-            color_vals = cmap_local(norm_raw(np.nan_to_num(local_raw, nan=raw_min)))[..., :3]
-            sig_rgb[sig_mask] = (1 - 0.7) * sig_rgb[sig_mask] + 0.7 * color_vals[sig_mask]
-        ax_sig.imshow(sig_rgb, interpolation="nearest")
+            sig_vals = np.where(sig_mask, local_raw, np.nan)
+            sig_im = ax_sig.imshow(sig_vals, cmap=cmap_local, norm=norm_raw, interpolation="nearest")
+            sig_im.set_alpha(np.where(np.isfinite(sig_vals), 0.85, 0.0))
+            last_sig_im = sig_im
         ax_sig.set_xticks([])
         ax_sig.set_yticks([])
 
-    axes[0, 0].set_ylabel("Raw mCherry", fontsize=11)
-    axes[1, 0].set_ylabel("ROI (cyan)", fontsize=11)
-    axes[2, 0].set_ylabel("Detected clusters", fontsize=11)
-    axes[3, 0].set_ylabel("Local Moran (raw)", fontsize=11)
-    axes[4, 0].set_ylabel("Local Moran (scaled)", fontsize=11)
-    axes[5, 0].set_ylabel("Significance (p<0.05)", fontsize=11)
+    row_labels = [
+        "Brightfield",
+        "Raw mCherry",
+        "ROI (cyan)",
+        "Detected clusters",
+        "Local Moran (raw)",
+        "Local Moran (scaled)",
+        "Significance (p<0.05)",
+    ]
+    for r, label in enumerate(row_labels):
+        axes[r, 0].set_ylabel(label, fontsize=11, fontweight="bold")
 
     if last_local_raw_im is not None:
-        cbar_raw = fig.colorbar(last_local_raw_im, ax=list(axes[3, :]), fraction=0.03, pad=0.02)
+        cbar_raw = fig.colorbar(last_local_raw_im, ax=list(axes[4, :]), fraction=0.03, pad=0.02)
         cbar_raw.set_label("Local Moran (raw)")
     if last_local_scaled_im is not None:
-        cbar_scaled = fig.colorbar(last_local_scaled_im, ax=list(axes[4, :]), fraction=0.03, pad=0.02)
+        cbar_scaled = fig.colorbar(last_local_scaled_im, ax=list(axes[5, :]), fraction=0.03, pad=0.02)
         cbar_scaled.set_label("Local Moran (scaled 0-1)")
-    if has_sig:
-        sm_sig = cm.ScalarMappable(norm=norm_raw, cmap=cmap_local)
-        cbar_sig = fig.colorbar(sm_sig, ax=list(axes[5, :]), fraction=0.03, pad=0.02)
+    if has_sig and last_sig_im is not None:
+        cbar_sig = fig.colorbar(last_sig_im, ax=list(axes[6, :]), fraction=0.03, pad=0.02)
         cbar_sig.set_label("Local Moran (significant, p<0.05)")
 
-    fig.subplots_adjust(left=0.05, right=0.82, top=0.92, bottom=0.08, wspace=0.05, hspace=0.12)
+    fig.subplots_adjust(left=0.06, right=0.82, top=0.93, bottom=0.08, wspace=0.05, hspace=0.12)
     legend_text = (
         "Legend:\n"
         "cyan = ROI (analysis region)\n"
         "magenta = detected clusters\n"
-        "heatmaps = Local Moran Ii\n"
-        "row 6 color = p<0.05 (one-tailed, positive autocorr)"
+        "coolwarm heatmaps = Local Moran Ii\n"
+        "row 7 colors = Local Moran for p<0.05 (one-tailed, positive autocorr)"
     )
     fig.text(0.85, 0.5, legend_text, fontsize=8, va="center")
     fig.text(
-        0.05,
+        0.06,
         0.02,
-        "Workflow visualization for a single well: raw fluorescence → ROI restriction → detected islands → Local Moran statistics (raw and display-scaled) → permutation-based significance map (p<0.05), highlighting spatially clustered regions within the analysis ROI.",
+        "Workflow visualization for a single well: brightfield → raw fluorescence → ROI restriction → detected islands → Local Moran statistics (raw and display-scaled) → permutation-based significance map (p<0.05).",
         fontsize=8,
     )
 
@@ -475,6 +488,7 @@ def _save_well_panel(
 
 def parse_args() -> argparse.Namespace:
     cfg_root = _default_project_root()
+    cfg = _load_config()
 
     parser = argparse.ArgumentParser(description="Batch Moran's I analysis for ROI fluorescence snapshots.")
     parser.add_argument(
@@ -533,6 +547,12 @@ def parse_args() -> argparse.Namespace:
         help="Directory to save per-well Moran panels (default: <project-root>/plots/morans/panels).",
     )
     parser.add_argument(
+        "--div-start",
+        type=int,
+        default=cfg.get("div_start"),
+        help="DIV value aligned with day_00 (default: value from dcxspot_config.json if present).",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -575,6 +595,9 @@ def main() -> None:
     if "time_hours" not in df.columns:
         parsed_hours = df["time"].apply(_parse_time_to_hours)
         df["time_hours"] = (df["day_index"].fillna(0) * 24.0) + parsed_hours.fillna(0)
+
+    if args.div_start is not None:
+        df["div_day"] = df["day_index"].fillna(0) + args.div_start
 
     heatmap_dir = (args.heatmap_dir or (default_output_dir / "heatmaps")).expanduser().resolve()
     overlay_dir = (args.overlay_dir or (default_output_dir / "overlays")).expanduser().resolve()
