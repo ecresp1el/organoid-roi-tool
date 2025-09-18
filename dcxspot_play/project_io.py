@@ -62,3 +62,11 @@ def load_roi_images(row: pd.Series, project_root: Path) -> Tuple[np.ndarray, np.
     fluorescence = read_image(fluor_path).astype(np.float32, copy=False)
     return brightfield, mask, fluorescence
 
+
+def load_detection_labels(brightfield_path: Path) -> np.ndarray | None:
+    """Load DCX detection labels (int) corresponding to a brightfield image."""
+
+    candidate = brightfield_path.parent / "dcxspot" / f"{brightfield_path.stem}_labels.tif"
+    if candidate.exists():
+        return read_image(candidate)
+    return None

@@ -233,6 +233,7 @@ By default the batch runner iterates well-by-well, prints progress, and writes:
 - `plots/morans/heatmaps/<image>_local_moran.png`
 - `plots/morans/overlays/<image>_local_overlay.png`
 - `plots/morans/heatmaps/p_values/<image>_local_pvals.png` (per-pixel permutation p-values; default 199 permutations)
+- `plots/morans/panels/<prefix>_well_<WELL>_moran_panel.(png|pdf|svg)` (3×N panels showing raw fluorescence, Local Moran map, and overlay through time)
 
 Use `--heatmap-dir`, `--overlay-dir`, and `--output-csv` to override locations, or `--local-permutations` to change the permutation depth (set to 0 to skip p-value maps). All computations respect the ROI mask and operate only on the fluorescence pixels inside each organoid.
 
