@@ -260,7 +260,11 @@ def main() -> None:
 
     rows = []
     processed_count = 0
-    for _, row in df.iterrows():
+    total_rows = len(df) if args.limit is None else min(len(df), args.limit)
+    for idx, row in df.iterrows():
+        well = row.get('well', 'unknown')
+        time_label = row.get('time', '')
+        print(f'Processing {idx + 1}/{total_rows} - well {well} {time_label}')
         rows.append(
             process_row(
                 row,
