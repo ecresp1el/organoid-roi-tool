@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import ticker
+from matplotlib import colors
+from matplotlib import colormaps
 
 from .plotting import minimal_style_context
 from .utils import apply_roi_mask, read_image, read_mask
@@ -383,18 +385,42 @@ def _plot_fluor_density_growth_boxplot(processed: ProcessedMeasurements, output_
 
 
 
+
 def _normalize_display_image(img: np.ndarray) -> np.ndarray:
     arr = np.asarray(img, dtype=np.float32)
     if arr.size == 0:
         return arr
-    lo, hi = np.percentile(arr, [2, 98])
+    valid = arr[np.isfinite(arr)]
+    if valid.size == 0:
+        return np.zeros_like(arr, dtype=np.float32)
+    lo, hi = np.nanpercentile(valid, [2, 98])
     if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
-        lo = np.nanmin(arr)
-        hi = np.nanmax(arr)
+        lo = float(np.nanmin(valid))
+        hi = float(np.nanmax(valid))
         if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
             return np.zeros_like(arr, dtype=np.float32)
     norm = (arr - lo) / (hi - lo)
     return np.clip(norm, 0.0, 1.0)
+
+
+def _crop_to_mask(image: np.ndarray, mask: np.ndarray, pad: int = 4) -> tuple[np.ndarray, np.ndarray]:
+    mask_bool = mask.astype(bool)
+    ys, xs = np.where(mask_bool)
+    if ys.size == 0 or xs.size == 0:
+        return image, mask_bool
+    y0 = max(0, ys.min() - pad)
+    y1 = min(mask_bool.shape[0], ys.max() + pad + 1)
+    x0 = max(0, xs.min() - pad)
+    x1 = min(mask_bool.shape[1], xs.max() + pad + 1)
+    if image.ndim > 2:
+        cropped_image = image[..., y0:y1, x0:x1]
+    elif image.ndim == 2:
+        cropped_image = image[y0:y1, x0:x1]
+    else:
+        cropped_image = image
+    cropped_mask = mask_bool[y0:y1, x0:x1]
+    return cropped_image, cropped_mask
+
 
 
 def _generate_well_panels(
@@ -407,56 +433,114 @@ def _generate_well_panels(
     df = processed.data
     label_lookup = processed.time_labels.set_index('time_hours')['label']
 
+    gray_cmap = colormaps['gray'].with_extremes(bad='black')
+    magma_cmap = colormaps['magma'].with_extremes(bad='black')
+
     for well, per_well in df.groupby('well', sort=True):
         per_well = per_well.sort_values('time_hours')
-        n_time = len(per_well)
-        if n_time == 0:
+        entries: List[dict] = []
+        raw_values: List[np.ndarray] = []
+
+        for row in per_well.itertuples():
+            brightfield_path = Path(row.brightfield_path)
+            mask_path = brightfield_path.with_name(f"{brightfield_path.stem}_mask.tif")
+            fluor_path = brightfield_path.parent / 'fluorescence' / f"{brightfield_path.stem}_mcherry.tif"
+
+            mask = read_mask(mask_path)
+            mask_bool = mask.astype(bool)
+            if not mask_bool.any():
+                continue
+
+            brightfield_img = read_image(brightfield_path).astype(np.float32, copy=False)
+            fluor_img = read_image(fluor_path).astype(np.float32, copy=False)
+
+            bf_crop, mask_crop = _crop_to_mask(brightfield_img, mask_bool)
+            fluor_crop, _ = _crop_to_mask(fluor_img, mask_bool)
+            fluor_masked = apply_roi_mask(fluor_img, mask_bool, outside='zero')
+            fluor_masked_crop, _ = _crop_to_mask(fluor_masked, mask_bool)
+
+            bf_roi = np.where(mask_crop, bf_crop, np.nan)
+            fluor_roi = np.where(mask_crop, fluor_crop, np.nan)
+            fluor_masked_roi = np.where(mask_crop, fluor_masked_crop, np.nan)
+
+            entries.append(
+                {
+                    'time_hours': row.time_hours,
+                    'mask': mask_crop,
+                    'bf_roi': bf_roi,
+                    'fluor_roi': fluor_roi,
+                    'fluor_masked_roi': fluor_masked_roi,
+                }
+            )
+            raw_values.append(fluor_roi[mask_crop])
+
+        if not entries:
             continue
+
+        raw_concat = np.concatenate(raw_values)
+        if raw_concat.size == 0:
+            continue
+        raw_min = float(np.nanmin(raw_concat))
+        raw_max = float(np.nanmax(raw_concat))
+        if not np.isfinite(raw_min) or not np.isfinite(raw_max) or raw_max <= raw_min:
+            raw_min, raw_max = 0.0, 1.0
+        raw_norm = colors.Normalize(vmin=raw_min, vmax=raw_max)
+        scaled_norm = colors.Normalize(vmin=0.0, vmax=1.0)
+
+        entries.sort(key=lambda x: x['time_hours'])
+        n_time = len(entries)
 
         with minimal_style_context():
             fig_width = max(2.2 * n_time, 6.0)
-            fig, axes = plt.subplots(2, n_time, figsize=(fig_width, 5.0))
+            fig, axes = plt.subplots(3, n_time, figsize=(fig_width, 6.4))
             axes = np.asarray(axes)
             if axes.ndim == 1:
-                axes = axes.reshape(2, 1)
+                axes = axes.reshape(3, 1)
 
-            for idx, (row_idx, row) in enumerate(per_well.iterrows()):
-                brightfield_path = Path(row['brightfield_path'])
-                mask_path = brightfield_path.with_name(f"{brightfield_path.stem}_mask.tif")
-                fluor_path = brightfield_path.parent / 'fluorescence' / f"{brightfield_path.stem}_mcherry.tif"
+            for idx, entry in enumerate(entries):
+                time_label = label_lookup.get(entry['time_hours'], f"{entry['time_hours']:.1f} h")
 
-                brightfield_img = read_image(brightfield_path)
-                mask = read_mask(mask_path)
-                fluor_img = read_image(fluor_path).astype(np.float32, copy=False)
-                fluor_masked = apply_roi_mask(fluor_img, mask, outside='zero')
-
-                display_bf = _normalize_display_image(brightfield_img)
-                display_fluor = _normalize_display_image(fluor_masked)
-                display_fluor = np.where(mask, display_fluor, 0.0)
-
+                bf_norm = _normalize_display_image(entry['bf_roi'])
                 ax_bf = axes[0, idx]
-                ax_fluor = axes[1, idx]
-
-                ax_bf.imshow(display_bf, cmap=cm.gray, interpolation='nearest')
-                ax_bf.contour(mask, levels=[0.5], colors='#ff6b6b', linewidths=0.8)
+                ax_bf.imshow(bf_norm, cmap=gray_cmap, interpolation='nearest', vmin=0.0, vmax=1.0)
                 ax_bf.set_xticks([])
                 ax_bf.set_yticks([])
-                time_label = label_lookup.get(row['time_hours'], f"{row['time_hours']:.1f} h")
                 ax_bf.set_title(time_label, fontsize=11)
 
-                ax_fluor.imshow(display_fluor, cmap=cm.magma, interpolation='nearest')
-                ax_fluor.set_xticks([])
-                ax_fluor.set_yticks([])
+                ax_raw = axes[1, idx]
+                ax_raw.imshow(entry['fluor_roi'], cmap=magma_cmap, norm=raw_norm, interpolation='nearest')
+                ax_raw.set_xticks([])
+                ax_raw.set_yticks([])
 
-            axes[0, 0].set_ylabel('Brightfield', fontsize=11)
-            axes[1, 0].set_ylabel('mCherry', fontsize=11)
-            fig.suptitle(f"Well {well}", x=0.01, ha='left', fontsize=14)
-            fig.tight_layout(rect=(0, 0, 1, 0.96))
+                scaled = _normalize_display_image(entry['fluor_masked_roi'])
+                ax_scaled = axes[2, idx]
+                ax_scaled.imshow(scaled, cmap=magma_cmap, norm=scaled_norm, interpolation='nearest')
+                ax_scaled.set_xticks([])
+                ax_scaled.set_yticks([])
+
+            axes[0, 0].set_ylabel('Brightfield (ROI)', fontsize=11)
+            axes[1, 0].set_ylabel('mCherry (raw ROI)', fontsize=11)
+            axes[2, 0].set_ylabel('mCherry (scaled ROI)', fontsize=11)
+
+            fig.subplots_adjust(left=0.05, right=0.88, top=0.9, bottom=0.06, wspace=0.05, hspace=0.08)
+
+            sm_raw = cm.ScalarMappable(norm=raw_norm, cmap=magma_cmap)
+            cbar_raw = fig.colorbar(sm_raw, ax=list(axes[1, :]), orientation='vertical', fraction=0.035, pad=0.02)
+            cbar_raw.set_label('Intensity (a.u.)')
+
+            sm_scaled = cm.ScalarMappable(norm=scaled_norm, cmap=magma_cmap)
+            cbar_scaled = fig.colorbar(sm_scaled, ax=list(axes[2, :]), orientation='vertical', fraction=0.035, pad=0.02)
+            cbar_scaled.set_label('Scaled intensity (0-1)')
+
+            fig.suptitle(f"Well {well}", x=0.05, ha='left', y=0.96, fontsize=14)
 
             output_base = output_dir / f"{prefix}_well_{well}_panel"
             saved_paths.extend(_save_multi_format(fig, output_base))
 
     return saved_paths
+
+
+
 
 
 def parse_args() -> argparse.Namespace:
