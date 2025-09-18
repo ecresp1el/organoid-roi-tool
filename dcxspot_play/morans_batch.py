@@ -65,12 +65,25 @@ def _save_heatmap(data: np.ndarray, mask: np.ndarray, path: Path, title: str) ->
     plt.close(fig)
 
 
-def _save_overlay(brightfield: np.ndarray, mask: np.ndarray, local_map: np.ndarray, path: Path, alpha: float = 0.5) -> None:
-    bf = brightfield.astype(np.float32, copy=False)
-    bf_norm = bf - np.nanmin(bf)
-    if bf_norm.max() > 0:
-        bf_norm /= bf_norm.max()
-    base_rgb = np.stack([bf_norm, bf_norm, bf_norm], axis=-1)
+def _normalize_for_display(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    vals = image[mask]
+    norm = np.zeros_like(image, dtype=np.float32)
+    if vals.size == 0:
+        return norm
+    lo, hi = np.percentile(vals, [2, 98])
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo = float(np.nanmin(vals))
+        hi = float(np.nanmax(vals))
+        if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+            return norm
+    norm_vals = np.clip((vals - lo) / (hi - lo), 0, 1)
+    norm[mask] = norm_vals
+    return norm
+
+
+def _save_overlay(fluor_image: np.ndarray, mask: np.ndarray, local_map: np.ndarray, path: Path, alpha: float = 0.5) -> None:
+    base_norm = _normalize_for_display(fluor_image, mask)
+    base_rgb = np.repeat(base_norm[..., None], 3, axis=-1)
 
     local_vals = local_map[mask]
     if local_vals.size > 0:
@@ -82,9 +95,9 @@ def _save_overlay(brightfield: np.ndarray, mask: np.ndarray, local_map: np.ndarr
         norm = np.zeros_like(local_map)
 
     cmap = colormaps.get_cmap("viridis")
-    overlay = cmap(norm)[..., :3]
+    overlay_rgb = cmap(norm)[..., :3]
     blended = base_rgb.copy()
-    blended[mask] = (1 - alpha) * base_rgb[mask] + alpha * overlay[mask]
+    blended[mask] = (1 - alpha) * base_rgb[mask] + alpha * overlay_rgb[mask]
     blended = np.clip(blended, 0, 1)
 
     plt.imsave(path, blended)
@@ -132,7 +145,7 @@ def process_row(
         local_results["local_heatmap"] = heatmap_path
 
         overlay_path = overlay_dir / f"{base_name}_local_overlay.png"
-        _save_overlay(brightfield, mask, local_map, overlay_path)
+        _save_overlay(fluor_masked, mask, local_map, overlay_path)
         local_results["local_overlay"] = overlay_path
 
         if local_permutations > 0:
