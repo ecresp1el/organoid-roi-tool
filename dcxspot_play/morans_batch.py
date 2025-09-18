@@ -1,4 +1,28 @@
-"""Batch runner for Moran's I spatial autocorrelation across ROI snapshots."""
+"""Batch runner for Moran's I spatial autocorrelation across ROI snapshots.
+
+This module expects each ROI entry in ``roi_measurements.csv`` to have the
+standard artefacts written by the Organoid ROI + DCX pipelines:
+
+* Brightfield image (``<stem>.tif``)
+* ROI mask (``<stem>_mask.tif``)
+* Raw mCherry fluorescence (``fluorescence/<stem>_mcherry.tif``)
+* Optional DCX detection labels (``dcxspot/<stem>_labels.tif``)
+
+For every time point we compute global Moran's I (with permutations) on the raw
+ROI fluorescence, derive local Moran statistics (raw Ii values and
+permutation-based p-values), and emit the following deliverables:
+
+* CSV summary of global Moran's I for every ROI.
+* Local Moran heatmaps, overlays, and p-value maps (one per ROI).
+* A per-well, 6-row montage illustrating the full processing workflow—raw
+  fluorescence, ROI mask, detected islands, raw Local Moran map, scaled Local
+  Moran map, and significance mask—so the provenance of the statistics is
+  visually explicit.
+
+All numerical computations use the raw fluorescence intensities inside the ROI
+after mean-centering; any percentile-based scaling is limited to figure
+generation for visual clarity.
+"""
 from __future__ import annotations
 
 import argparse
@@ -100,6 +124,7 @@ def _render_overlay_arrays(
     local_map: np.ndarray,
     alpha: float = 0.5,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Prepare display-ready arrays for the Local Moran overlay pipeline."""
     base_norm = _normalize_for_display(fluor_image, mask)
     base_rgb = np.repeat(base_norm[..., None], 3, axis=-1)
 
@@ -161,6 +186,13 @@ def process_row(
     pmap_dir: Path,
     random_state: Optional[int],
 ) -> Tuple[Dict[str, object], Dict[str, object]]:
+    """Compute Moran statistics and assemble panel data for a single ROI.
+
+    The function operates on raw fluorescence pixels inside the ROI mask,
+    performs mean-centering before Moran computations, and gathers all
+    intermediate arrays needed to render the 6×N workflow panel described in
+    the module docstring.
+    """
     brightfield_path = resolve_brightfield_path(row, project_root)
     brightfield, mask, fluor = load_roi_images(row, project_root)
     mask = mask.astype(bool, copy=False)
@@ -287,7 +319,13 @@ def _save_well_panel(
     entries: list[Dict[str, object]],
     panel_dir: Path,
 ) -> None:
-    """Render a 6×N pipeline panel per well (columns = time points)."""
+    """Render the multi-row workflow panel for a single well.
+
+    Rows (top → bottom): raw fluorescence, ROI overlay, detected islands,
+    Local Moran (raw values with shared colour scale), Local Moran scaled to
+    0–1 for display, and permutation-significance overlay (p < 0.05).  Each
+    column corresponds to a time point and carries its label in the title.
+    """
 
     filtered = [e for e in entries if e.get("raw_display") is not None]
     if not filtered:

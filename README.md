@@ -226,16 +226,24 @@ The script reads `<project-root>/roi_measurements.csv` by default (using `dcxspo
 ```
 python -m dcxspot_play.morans_batch --project-root /path/to/project --permutations 999
 ```
+python -m dcxspot_play.morans_batch --project-root /path/to/project --permutations 999
+```
 
-By default the batch runner iterates well-by-well, prints progress, and writes:
+**Inputs & assumptions**
 
-- `plots/morans/morans_global.csv` (global Moran's I for every ROI)
-- `plots/morans/heatmaps/<image>_local_moran.png`
-- `plots/morans/overlays/<image>_local_overlay.png`
-- `plots/morans/heatmaps/p_values/<image>_local_pvals.png` (per-pixel permutation p-values; default 199 permutations)
-- `plots/morans/panels/<prefix>_well_<WELL>_moran_panel.(png|pdf|svg)` (3×N panels showing raw fluorescence, Local Moran map, and overlay through time)
+- Each entry in `roi_measurements.csv` must have the companion files saved by the ROI/DCX workflow: `*_mask.tif`, `fluorescence/*_mcherry.tif`, and (optionally) `dcxspot/*_labels.tif` containing the detected islands.
+- Moran’s I statistics are computed on the raw mCherry intensities inside the ROI (mean centred, no percentile scaling). Display scaling is applied only when rendering figures.
+- Adjacency weights are zeroed outside the ROI, so only intra-ROI neighbours contribute (queen or rook connectivity via `--neighbors`).
 
-Use `--heatmap-dir`, `--overlay-dir`, and `--output-csv` to override locations, or `--local-permutations` to change the permutation depth (set to 0 to skip p-value maps). All computations respect the ROI mask and operate only on the fluorescence pixels inside each organoid.
+**Outputs (default under `<project>/plots/morans/`):**
+
+- `morans_global.csv` – global Moran’s I + permutation summary for every ROI.
+- `heatmaps/<image>_local_moran.png` – Local Moran Ii (raw values) restricted to the ROI.
+- `overlays/<image>_local_overlay.png` – raw fluorescence blended with the Local Moran colour map.
+- `heatmaps/p_values/<image>_local_pvals.png` – Local Moran permutation p-values (default `--local-permutations 199`; set to 0 to skip).
+- `panels/<prefix>_well_<WELL>_moran_panel.(png|pdf|svg)` – six-row workflow montage per well (raw fluorescence → ROI mask → detected islands → Local Moran raw → Local Moran scaled → p<0.05 significance overlay).
+
+Use `--output-csv`, `--heatmap-dir`, `--overlay-dir`, and `--panel-dir` to customise destinations, and tune `--permutations` / `--local-permutations` for the desired runtime vs. precision. The batch runner processes wells sequentially and prints progress so you can monitor long analyses.
 
 ---
 

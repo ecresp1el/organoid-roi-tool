@@ -1,4 +1,17 @@
-"""Helpers for locating and loading project image assets for ROI analyses."""
+"""Helpers for locating and loading project image assets for ROI analyses.
+
+Expected per-image artefacts (all adjacent to the brightfield TIFF):
+
+* ``<stem>_mask.tif`` – binary ROI mask (saved by the ROI tool).
+* ``fluorescence/<stem>_mcherry.tif`` – raw fluorescence channel used for
+  quantification.
+* ``dcxspot/<stem>_labels.tif`` (optional) – integer segmentation labels from
+  the DCX detection pipeline.  If present, we treat non-zero pixels as
+  segmented islands for visualisation.
+
+All arrays returned here retain their raw numeric values; any display scaling
+or normalisation happens downstream in the visualisation modules.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -64,7 +77,15 @@ def load_roi_images(row: pd.Series, project_root: Path) -> Tuple[np.ndarray, np.
 
 
 def load_detection_labels(brightfield_path: Path) -> np.ndarray | None:
-    """Load DCX detection labels (int) corresponding to a brightfield image."""
+    """Load integer DCX segmentation labels for a given brightfield image.
+
+    Returns
+    -------
+    numpy.ndarray or ``None``
+        Labelled array where non-zero integers indicate detected islands.
+        ``None`` if the `_labels.tif` file is absent, in which case island
+        overlays are skipped gracefully.
+    """
 
     candidate = brightfield_path.parent / "dcxspot" / f"{brightfield_path.stem}_labels.tif"
     if candidate.exists():
