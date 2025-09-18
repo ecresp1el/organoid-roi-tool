@@ -35,6 +35,7 @@ from matplotlib import colors
 from matplotlib import colormaps
 
 from .plotting import minimal_style_context
+from .project_io import resolve_brightfield_path
 from .utils import apply_roi_mask, read_image, read_mask
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "dcxspot_config.json"
@@ -133,26 +134,6 @@ def _build_time_labels(df: pd.DataFrame, div_start: Optional[int]) -> pd.DataFra
     return labels
 
 
-def _resolve_brightfield_path(row: pd.Series, project_root: Path) -> Path:
-    rel = row.get('image_relpath')
-    if isinstance(rel, str) and rel:
-        candidate = (project_root / rel).expanduser().resolve()
-        if candidate.exists():
-            return candidate
-
-    image_path = row.get('image_path')
-    if isinstance(image_path, str):
-        candidate = Path(image_path).expanduser().resolve()
-        if candidate.exists():
-            return candidate
-
-    raise FileNotFoundError(
-        f"Could not locate image for row with relpath={rel!r} and image_path={row.get('image_path')!r}"
-    )
-
-
-
-
 def _prepare_measurements(csv_path: Path, div_start: Optional[int], project_root: Path) -> ProcessedMeasurements:
     """Load roi_measurements.csv and decorate it with fluorescence metrics.
 
@@ -199,7 +180,7 @@ def _prepare_measurements(csv_path: Path, div_start: Optional[int], project_root
         df["age_div"] = df["time_days"] + div_start
 
     brightfield_paths = [
-        _resolve_brightfield_path(row, project_root) for _, row in df.iterrows()
+        resolve_brightfield_path(row, project_root) for _, row in df.iterrows()
     ]
     df["brightfield_path"] = brightfield_paths
 

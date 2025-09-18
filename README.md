@@ -221,6 +221,14 @@ python -m dcxspot_play.plot_growth --prefix exp1 --div-start 11
 
 The script reads `<project-root>/roi_measurements.csv` by default (using `dcxspot_config.json`) and writes outputs to `<project-root>/plots/`. Each run emits PNG/PDF/SVG triplets for area, area fold-change, total mCherry intensity, total mCherry fold-change, area-normalised (per-pixel) intensity, and the corresponding fold-change. Intensities are measured inside each ROI on the matching fluorescence images; fold-change normalises to the first time-point per well. It also builds per-well image panels cropped to the ROI (row 1: brightfield + outline, row 2: raw mCherry with a shared absolute colorbar, row 3: ROI-normalised mCherry with a shared 0–1 colorbar) so you can visually track each organoid over time in a single figure. Set `div_start` in `dcxspot_config.json` (or pass `--div-start`) so day_00 maps to the DIV value you expect (e.g., DIV11). Use `--prefix` to label different experiments; override `--output-dir` only when you intentionally want a different destination.
 
+### Spatial Autocorrelation (Moran's I)
+
+```
+python -m dcxspot_play.morans_batch --project-root /path/to/project --permutations 999
+```
+
+The Moran batch runner scans every ROI, computes global Moran's I (with permutation p-value), and writes the summary to `<project-root>/plots/morans/morans_global.csv` unless you supply `--output-csv`. Use `--heatmap-dir` or `--overlay-dir` to save Local Moran heatmaps and brightfield overlays, and `--local-permutations` when you need per-pixel permutation p-values (slower). All computations respect the ROI mask and only use the fluorescence pixels inside each organoid.
+
 ---
 
 ## 5) Keyboard Shortcuts
