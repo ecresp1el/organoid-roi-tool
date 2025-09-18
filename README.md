@@ -227,7 +227,14 @@ The script reads `<project-root>/roi_measurements.csv` by default (using `dcxspo
 python -m dcxspot_play.morans_batch --project-root /path/to/project --permutations 999
 ```
 
-The Moran batch runner scans every ROI, computes global Moran's I (with permutation p-value), and writes the summary to `<project-root>/plots/morans/morans_global.csv` unless you supply `--output-csv`. Use `--heatmap-dir` or `--overlay-dir` to save Local Moran heatmaps and brightfield overlays, and `--local-permutations` when you need per-pixel permutation p-values (slower). All computations respect the ROI mask and only use the fluorescence pixels inside each organoid.
+By default the batch runner iterates well-by-well, prints progress, and writes:
+
+- `plots/morans/morans_global.csv` (global Moran's I for every ROI)
+- `plots/morans/heatmaps/<image>_local_moran.png`
+- `plots/morans/overlays/<image>_local_overlay.png`
+- `plots/morans/heatmaps/p_values/<image>_local_pvals.png` (per-pixel permutation p-values; default 199 permutations)
+
+Use `--heatmap-dir`, `--overlay-dir`, and `--output-csv` to override locations, or `--local-permutations` to change the permutation depth (set to 0 to skip p-value maps). All computations respect the ROI mask and operate only on the fluorescence pixels inside each organoid.
 
 ---
 

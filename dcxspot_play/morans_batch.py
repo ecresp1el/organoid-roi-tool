@@ -96,11 +96,18 @@ def process_row(
     neighbors: int,
     permutations: int,
     local_permutations: int,
-    overlay_dir: Optional[Path],
-    heatmap_dir: Optional[Path],
+    overlay_dir: Path,
+    heatmap_dir: Path,
+    pmap_dir: Path,
     random_state: Optional[int],
 ) -> Dict[str, object]:
     brightfield, mask, fluor = load_roi_images(row, project_root)
+    rel = row.get("image_relpath")
+    base_name = (
+        Path(rel).stem
+        if isinstance(rel, str) and rel
+        else Path(row.get("image_path", "roi")).stem
+    )
     fluor_masked = apply_roi_mask(fluor, mask, outside="zero")
 
     global_stats = permutation_test_global(
@@ -120,20 +127,15 @@ def process_row(
         )
         local_map = local_moran_map(xc, mask, neighbor_sum_xc)
 
-        if heatmap_dir:
-            heatmap_dir.mkdir(parents=True, exist_ok=True)
-            heatmap_path = heatmap_dir / f"{Path(row.image_relpath).stem}_local_moran.png"
-            _save_heatmap(local_map, mask, heatmap_path, "Local Moran (Ii)")
-            local_results["local_heatmap"] = heatmap_path
+        heatmap_path = heatmap_dir / f"{base_name}_local_moran.png"
+        _save_heatmap(local_map, mask, heatmap_path, "Local Moran (Ii)")
+        local_results["local_heatmap"] = heatmap_path
 
-        if overlay_dir:
-            overlay_dir.mkdir(parents=True, exist_ok=True)
-            overlay_path = overlay_dir / f"{Path(row.image_relpath).stem}_local_overlay.png"
-            _save_overlay(brightfield, mask, local_map, overlay_path)
-            local_results["local_overlay"] = overlay_path
+        overlay_path = overlay_dir / f"{base_name}_local_overlay.png"
+        _save_overlay(brightfield, mask, local_map, overlay_path)
+        local_results["local_overlay"] = overlay_path
 
         if local_permutations > 0:
-            p_heatmap_dir = heatmap_dir / "p_values" if heatmap_dir else None
             Ii_map, p_map = local_moran_permutation_pvals(
                 fluor_masked,
                 mask,
@@ -141,11 +143,9 @@ def process_row(
                 local_permutations=local_permutations,
                 random_state=random_state,
             )
-            if p_heatmap_dir:
-                p_heatmap_dir.mkdir(parents=True, exist_ok=True)
-                p_path = p_heatmap_dir / f"{Path(row.image_relpath).stem}_local_pvals.png"
-                _save_heatmap(p_map, mask, p_path, "Local Moran p-values")
-                local_results["local_pmap"] = p_path
+            p_path = pmap_dir / f"{base_name}_local_pvals.png"
+            _save_heatmap(p_map, mask, p_path, "Local Moran p-values")
+            local_results["local_pmap"] = p_path
 
     record = {
         "image_relpath": row.get("image_relpath"),
@@ -196,20 +196,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--local-permutations",
         type=int,
-        default=0,
-        help="If >0, run per-pixel permutation test for local Moran (costly).",
+        default=199,
+        help="Per-pixel permutation count for Local Moran p-values (default: 199).",
     )
     parser.add_argument(
         "--heatmap-dir",
         type=Path,
         default=None,
-        help="Directory to save local Moran heatmaps (optional).",
+        help="Directory to save local Moran heatmaps (default: <project-root>/plots/morans/heatmaps).",
     )
     parser.add_argument(
         "--overlay-dir",
         type=Path,
         default=None,
-        help="Directory to save brightfield overlays (optional).",
+        help="Directory to save brightfield overlays (default: <project-root>/plots/morans/overlays).",
     )
     parser.add_argument(
         "--limit",
@@ -245,41 +245,57 @@ def main() -> None:
     else:
         output_csv.parent.mkdir(parents=True, exist_ok=True)
 
-    heatmap_dir = args.heatmap_dir
-    overlay_dir = args.overlay_dir
-    if heatmap_dir:
-        heatmap_dir = heatmap_dir.expanduser().resolve()
-        heatmap_dir.mkdir(parents=True, exist_ok=True)
-    if overlay_dir:
-        overlay_dir = overlay_dir.expanduser().resolve()
-        overlay_dir.mkdir(parents=True, exist_ok=True)
+    heatmap_dir = (args.heatmap_dir or (default_output_dir / "heatmaps")).expanduser().resolve()
+    overlay_dir = (args.overlay_dir or (default_output_dir / "overlays")).expanduser().resolve()
+    pmap_dir = heatmap_dir / "p_values"
+    heatmap_dir.mkdir(parents=True, exist_ok=True)
+    overlay_dir.mkdir(parents=True, exist_ok=True)
+    pmap_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(roi_path)
     if df.empty:
         raise SystemExit("roi_measurements.csv is empty.")
 
     rows = []
-    processed_count = 0
-    total_rows = len(df) if args.limit is None else min(len(df), args.limit)
-    for idx, row in df.iterrows():
-        well = row.get('well', 'unknown')
-        time_label = row.get('time', '')
-        print(f'Processing {idx + 1}/{total_rows} - well {well} {time_label}')
-        rows.append(
-            process_row(
-                row,
-                project_root=project_root,
-                neighbors=args.neighbors,
-                permutations=args.permutations,
-                local_permutations=args.local_permutations,
-                overlay_dir=overlay_dir,
-                heatmap_dir=heatmap_dir,
-                random_state=args.random_state,
-            )
-        )
-        processed_count += 1
-        if args.limit and processed_count >= args.limit:
+    wells = list(df.groupby('well', sort=True))
+    total_wells = len(wells)
+    processed_rows = 0
+    row_limit = args.limit if args.limit is not None else len(df)
+
+    for w_idx, (well, group) in enumerate(wells, start=1):
+        if processed_rows >= row_limit:
             break
+
+        group = group.sort_values(['day', 'time']) if {'day', 'time'} <= set(group.columns) else group
+        print(f"\nProcessing well {well} ({w_idx}/{total_wells})")
+        group_total = len(group)
+
+        for idx, (_, row) in enumerate(group.iterrows(), start=1):
+            if processed_rows >= row_limit:
+                break
+            time_label = row.get('time', '')
+            bar_width = 28
+            progress = idx / group_total if group_total else 1.0
+            filled = int(bar_width * progress)
+            bar = '#' * filled + '-' * (bar_width - filled)
+            print(f"  [{bar}] {idx}/{group_total} time {time_label}", end='\r', flush=True)
+
+            rows.append(
+                process_row(
+                    row,
+                    project_root=project_root,
+                    neighbors=args.neighbors,
+                    permutations=args.permutations,
+                    local_permutations=args.local_permutations,
+                    overlay_dir=overlay_dir,
+                    heatmap_dir=heatmap_dir,
+                    pmap_dir=pmap_dir,
+                    random_state=args.random_state,
+                )
+            )
+            processed_rows += 1
+
+        print()  # newline after finishing the well
 
     result_df = pd.DataFrame(rows)
     result_df.to_csv(output_csv, index=False)
