@@ -1,4 +1,11 @@
-"""Spatial autocorrelation utilities (Moran's I) for ROI pixel data."""
+"""Spatial autocorrelation utilities (Moran's I) measured on raw ROI pixels.
+
+All statistics operate directly on the original fluorescence values inside the
+ROI mask.  We mean-center the ROI pixels prior to correlation (classic Moran's
+formulation) and never apply display-oriented scaling/normalisation during the
+computation.  Percentile scaling is only performed later, on figures, so the
+statistical quantities reported here reflect the true pixel intensities.
+"""
 from __future__ import annotations
 
 from typing import Dict, Iterable, Optional, Tuple
@@ -42,7 +49,24 @@ def _neighbor_shifts(neighbors: int) -> Iterable[Tuple[int, int]]:
 
 
 def morans_i_snapshot(image: np.ndarray, roi_mask: np.ndarray, neighbors: int = 8):
-    """Compute global Moran's I and intermediates for local statistics."""
+    """Compute global Moran's I and intermediates for Local Moran statistics.
+
+    Parameters
+    ----------
+    image
+        2-D array of *raw* fluorescence intensities.
+    roi_mask
+        Boolean ROI mask (True inside ROI).  Only these pixels contribute to
+        the statistic; neighbor contributions are zeroed outside the ROI.
+    neighbors
+        Connectivity scheme (4 = rook, 8 = queen).
+
+    Notes
+    -----
+    We mean-center the ROI intensities before computing Moran's I and
+    accumulate neighbor sums only when both the focal pixel and neighbor lie
+    inside the ROI.  This avoids leakage across the mask boundary.
+    """
 
     if image.ndim != 2:
         raise ValueError("image must be 2-D")
@@ -115,7 +139,7 @@ def permutation_test_global(
 
 
 def local_moran_map(xc: np.ndarray, roi_mask: np.ndarray, neighbor_sum_xc: np.ndarray) -> np.ndarray:
-    """Local Moran map restricted to the ROI."""
+    """Compute Local Moran values within the ROI using mean-centered intensities."""
 
     mask = roi_mask.astype(bool, copy=False)
     n_pixels = mask.sum()
@@ -155,4 +179,3 @@ def local_moran_permutation_pvals(
     p_map = np.zeros_like(image, dtype=np.float64)
     p_map[mask] = (perm_exceed[mask] + 1.0) / (local_permutations + 1.0)
     return Ii_obs, p_map
-

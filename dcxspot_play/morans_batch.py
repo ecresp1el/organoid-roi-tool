@@ -82,6 +82,14 @@ def _normalize_for_display(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
 
 
 def _save_overlay(fluor_image: np.ndarray, mask: np.ndarray, local_map: np.ndarray, path: Path, alpha: float = 0.5) -> None:
+    """Write an overlay visualising Local Moran on top of raw fluorescence.
+
+    The grayscale base is the ROI-masked fluorescence array scaled by the
+    2–98th percentile of *raw* ROI intensities for display only; the underlying
+    statistics were computed on the unscaled values.  Local Moran values are
+    mapped with ``viridis`` and alpha-blended only inside the ROI.
+    """
+
     base_norm = _normalize_for_display(fluor_image, mask)
     base_rgb = np.repeat(base_norm[..., None], 3, axis=-1)
 
