@@ -486,30 +486,43 @@ def generate_workflow_figure(
     if not cell_table.empty:
         cell_table.to_csv(cells_dir / f"{nd2_path.stem}_cells.csv", index=False)
 
-    example_label = _choose_example_cell(seg.labels)
-    if example_label == 0:
+    # prepare sample cells for panels C and D
+    props = measure.regionprops(seg.labels)
+    cell_samples: List[dict] = []
+    if props:
+        num_samples = min(len(props), 5)
+        indices = np.linspace(0, len(props) - 1, num_samples, dtype=int)
+        for idx in indices:
+            prop = props[idx]
+            label_id = prop.label
+            mask = seg.labels == label_id
+            if mask.sum() == 0:
+                continue
+            patch_image, patch_mask = _extract_patch(seg.raw, mask)
+            dilated = ndi.binary_dilation(mask, iterations=8)
+            ring_mask = np.logical_and(dilated, ~mask)
+            if ring_mask.any():
+                patch_ring = _extract_patch(seg.raw, ring_mask)[1]
+            else:
+                patch_ring = np.zeros_like(patch_mask, dtype=bool)
+
+            channel_patches: Dict[str, np.ndarray] = {}
+            for name, image in channel_images.items():
+                ch_patch, _ = _extract_patch(image, mask)
+                channel_patches[name] = ch_patch
+
+            cell_samples.append(
+                {
+                    "label": label_id,
+                    "patch": patch_image,
+                    "mask": patch_mask,
+                    "ring": patch_ring,
+                    "channels": channel_patches,
+                }
+            )
+
+    if not cell_samples:
         raise RuntimeError("No segmented cells found for example panel.")
-
-    example_mask = seg.labels == example_label
-    padded_mask = ndi.binary_dilation(example_mask, iterations=8)
-    ring_mask = np.logical_and(padded_mask, ~example_mask)
-
-    patch_image, patch_mask = _extract_patch(seg.raw, example_mask)
-    if ring_mask.any():
-        patch_ring = _extract_patch(seg.raw, ring_mask)[1]
-    else:
-        patch_ring = np.zeros_like(patch_mask, dtype=bool)
-
-    channel_patches: "OrderedDict[str, Tuple[np.ndarray, np.ndarray]]" = OrderedDict()
-    for name in panel_channels:
-        if name not in channel_images:
-            continue
-        img_patch, mask_patch = _extract_patch(channel_images[name], example_mask)
-        channel_patches[name] = (img_patch, mask_patch)
-    for name in channel_names:
-        if name not in channel_patches and name in channel_images:
-            img_patch, mask_patch = _extract_patch(channel_images[name], example_mask)
-            channel_patches[name] = (img_patch, mask_patch)
 
     # ------------------------------------------------------------------ figure layout
     FIG_W, FIG_H = 1920, 1164
@@ -689,14 +702,30 @@ def generate_workflow_figure(
 
     # Panel C ------------------------------------------------------------
     panel_c = dict(x=MARGIN_LEFT, y=row2_y, w=780, h=ROW2_H)
-    axC = add_axes_pixels(panel_c["x"], panel_c["y"] + CAPTION, panel_c["w"], panel_c["h"] - CAPTION)
-    axC.imshow(patch_image, cmap="gray")
-    axC.contour(patch_mask.astype(float), levels=[0.5], colors="cyan", linewidths=1.5)
-    if patch_ring.any():
-        axC.contour(patch_ring.astype(float), levels=[0.5], colors="orange", linestyles="--", linewidths=1.0)
-    axC.axis("off")
-    _add_scale_bar(axC, pixel_size_um, patch_image.shape)
-    add_panel_label(axC, "C")
+    grid_rows, grid_cols = 2, 2
+    slot_w_c = (panel_c["w"] - (grid_cols - 1) * sub_gap) / grid_cols
+    slot_h_c = (panel_c["h"] - CAPTION - (grid_rows - 1) * sub_gap) / grid_rows
+
+    c_samples = cell_samples[: grid_rows * grid_cols]
+    if not c_samples:
+        axC_blank = add_axes_pixels(panel_c["x"], panel_c["y"] + CAPTION, panel_c["w"], panel_c["h"] - CAPTION)
+        axC_blank.axis("off")
+        add_panel_label(axC_blank, "C")
+    else:
+        for idx, sample in enumerate(c_samples):
+            row = idx // grid_cols
+            col = idx % grid_cols
+            slot_x = panel_c["x"] + col * (slot_w_c + sub_gap)
+            slot_y = panel_c["y"] + CAPTION + (grid_rows - row - 1) * (slot_h_c + sub_gap)
+            ax = add_axes_pixels(slot_x, slot_y, slot_w_c, slot_h_c)
+            ax.imshow(sample["patch"], cmap="gray")
+            ax.contour(sample["mask"].astype(float), levels=[0.5], colors="cyan", linewidths=1.2)
+            if sample["ring"].any():
+                ax.contour(sample["ring"].astype(float), levels=[0.5], colors="orange", linestyles="--", linewidths=1.0)
+            ax.axis("off")
+            _add_scale_bar(ax, pixel_size_um, sample["patch"].shape)
+            ax.text(0.02, 0.02, f"Cell {sample['label']}", transform=ax.transAxes, fontsize=9, color="white", ha="left", va="bottom", bbox={"boxstyle": "round", "facecolor": "black", "alpha": 0.4, "edgecolor": "none"})
+        add_panel_label(ax, "C")
     measurement_channels = [long_aliases[name] for name in panel_channels if name != dapi_key and name in long_aliases]
     if measurement_channels:
         if len(measurement_channels) == 1:
@@ -707,7 +736,36 @@ def generate_workflow_figure(
             channel_text = ", ".join(measurement_channels[:2]) + "…"
     else:
         channel_text = "additional markers"
-    add_caption(panel_c["x"], panel_c["y"], panel_c["w"], f"C – Per-cell measurement region ({channel_text})")
+    add_caption(panel_c["x"], panel_c["y"], panel_c["w"], f"C – Sampled per-cell measurement regions ({channel_text})")
+
+    # Panel D ------------------------------------------------------------
+    panel_d_x = panel_c["x"] + panel_c["w"] + ROW_GAP
+    panel_d_w = FIG_W - MARGIN_LEFT - panel_d_x
+    panel_d = dict(x=panel_d_x, y=row2_y, w=panel_d_w, h=ROW2_H)
+    d_sample = cell_samples[0]
+    channels_for_d = [dapi_key] + [name for name in channel_names if name != dapi_key and name in d_sample["channels"]]
+    n_slots_d = len(channels_for_d)
+    if n_slots_d == 0:
+        axD_blank = add_axes_pixels(panel_d["x"], panel_d["y"] + CAPTION, panel_d["w"], panel_d["h"] - CAPTION)
+        axD_blank.axis("off")
+    else:
+        slot_w_d = (panel_d["w"] - (n_slots_d - 1) * sub_gap)
+        slot_w_d = slot_w_d / n_slots_d
+        slot_h_d = panel_d["h"] - CAPTION
+        for idx, name in enumerate(channels_for_d):
+            slot_x = panel_d["x"] + idx * (slot_w_d + sub_gap)
+            ax = add_axes_pixels(slot_x, panel_d["y"] + CAPTION, slot_w_d - (cbar_w + cbar_pad), slot_h_d)
+            cmap = _pseudo_colormap_for_channel(name) or "gray"
+            ax.imshow(d_sample["channels"].get(name, np.zeros_like(d_sample["patch"])), cmap=cmap)
+            ax.axis("off")
+            _add_scale_bar(ax, pixel_size_um, d_sample["patch"].shape)
+            ax.set_title(long_aliases.get(name, name), fontsize=9, pad=4)
+            cax = add_axes_pixels(slot_x + slot_w_d - cbar_w, panel_d["y"] + CAPTION, cbar_w, slot_h_d)
+            sm = plt.cm.ScalarMappable(norm=mcolors.Normalize(vmin=0, vmax=1), cmap=cmap)
+            sm.set_array([])
+            fig.colorbar(sm, cax=cax).ax.tick_params(labelsize=7)
+        add_panel_label(ax, "D")
+    add_caption(panel_d["x"], panel_d["y"], panel_d["w"], f"D – Channel patches for cell {d_sample['label']}")
 
     # Panel E ------------------------------------------------------------
     panel_e = dict(x=MARGIN_LEFT, y=row3_y, w=592, h=ROW3_H)
