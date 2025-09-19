@@ -10,7 +10,7 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib import cm, gridspec, patheffects
+from matplotlib import cm, patheffects
 from matplotlib.patches import FancyArrowPatch
 from nd2 import ND2File
 from scipy import ndimage as ndi
@@ -785,7 +785,8 @@ def generate_workflow_figure(
     add_caption(panel_g["x"], panel_g["y"], panel_g["w"], "G – Workflow outputs")
 
     figure_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figure_path, dpi=300)
+    save_dpi = FIG_W / fig.get_size_inches()[0]
+    fig.savefig(figure_path, dpi=save_dpi)
     plt.close(fig)
 
     return figure_path
