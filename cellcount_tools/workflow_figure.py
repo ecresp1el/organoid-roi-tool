@@ -154,23 +154,43 @@ PSEUDO_COLORMAPS: Dict[str, mcolors.Colormap] = {
 
 
 def _build_rgb_image(channels: Dict[str, np.ndarray]) -> Tuple[np.ndarray, Dict[str, str]]:
-    """Return an RGB composite and the channel-to-color mapping."""
+    """Return an RGB composite and the channel-to-color mapping.
 
-    def pick_channel(keywords: Iterable[str], fallback: str) -> Tuple[str, np.ndarray]:
+    Only channels that exist contribute; missing channels yield zero-filled planes so the
+    merged view does not fabricate pseudo-colours.
+    """
+
+    def pick_channel(keywords: Iterable[str]) -> Tuple[str | None, np.ndarray | None]:
         for key in keywords:
             for name, img in channels.items():
                 if key in name.lower():
                     return name, img
-        return fallback, channels[fallback]
+        return None, None
 
+    # DAPI (blue) is mandatory for the merge; if absent, take the first channel.
     default_name = next(iter(channels))
-    dapi_name, blue = pick_channel(["dapi"], default_name)
-    red_name, red = pick_channel(["cy5"], dapi_name)
-    green_name, green = pick_channel(["gfp"], dapi_name)
+    dapi_name, blue = pick_channel(["dapi"])
+    if blue is None:
+        dapi_name = default_name
+        blue = channels[dapi_name]
+
+    red_name, red = pick_channel(["cy5", "dcx", "sox2", "647"])
+    green_name, green = pick_channel(["gfp", "lhx6", "488"])
+
+    shape = blue.shape
+    zeros = np.zeros(shape, dtype=blue.dtype)
+    if red is None:
+        red = zeros
+    if green is None:
+        green = zeros
 
     rgb = np.stack([red, green, blue], axis=-1)
     rgb = np.clip(rgb, 0.0, 1.0)
-    mapping = {"red": red_name, "green": green_name, "blue": dapi_name}
+    mapping: Dict[str, str] = {"blue": dapi_name}
+    if red_name:
+        mapping["red"] = red_name
+    if green_name:
+        mapping["green"] = green_name
     return rgb, mapping
 
 
