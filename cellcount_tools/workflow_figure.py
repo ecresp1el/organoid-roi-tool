@@ -22,11 +22,17 @@ from skimage import feature, filters, measure, morphology, segmentation
 
 
 def _load_nd2_projection(nd2_path: Path) -> Tuple[np.ndarray, List[str], float | None]:
-    """Return (C, Y, X) array, channel names, and XY pixel size in microns."""
+    """Return (C, Y, X) array, channel names, and XY pixel size in microns.
+
+    The ND2 reader occasionally returns arrays lacking an explicit Z axis or
+    channels collapsed into the last dimension. We normalise the array to
+    ``(Z, C, Y, X)`` before the Z projection so downstream code can rely on a
+    consistent layout.
+    """
 
     nd2_path = Path(nd2_path)
     with ND2File(nd2_path) as nd2_file:
-        data = nd2_file.asarray()  # (Z, C, Y, X)
+        data = np.asarray(nd2_file.asarray())
         channels_meta = nd2_file.metadata.channels or []
         voxel_size = None
         try:
@@ -36,8 +42,23 @@ def _load_nd2_projection(nd2_path: Path) -> Tuple[np.ndarray, List[str], float |
         if vs is not None:
             voxel_size = float(vs.x) if getattr(vs, "x", None) else None
 
-    if data.ndim != 4:
-        raise ValueError(f"Expected ND2 data with 4 dims (Z, C, Y, X); got shape {data.shape}")
+    # Harmonise dimensionality.
+    if data.ndim == 4:
+        harmonised = data
+    elif data.ndim == 3:
+        if len(channels_meta) and len(channels_meta) == data.shape[0]:  # (C, Y, X)
+            harmonised = data[np.newaxis, ...]
+        elif len(channels_meta) and len(channels_meta) == data.shape[-1]:  # (Y, X, C)
+            harmonised = np.moveaxis(data, -1, 0)[np.newaxis, ...]
+        else:  # assume (Z, Y, X) with a single channel
+            harmonised = data[:, np.newaxis, ...]
+    elif data.ndim == 2:  # single plane, single channel
+        harmonised = data[np.newaxis, np.newaxis, ...]
+    else:
+        raise ValueError(f"Unsupported ND2 array shape {data.shape}; cannot build projection")
+
+    if harmonised.ndim != 4:
+        raise ValueError(f"Could not reshape ND2 data to (Z, C, Y, X); got shape {harmonised.shape}")
 
     channel_names: List[str] = []
     for channel in channels_meta:
@@ -50,7 +71,14 @@ def _load_nd2_projection(nd2_path: Path) -> Tuple[np.ndarray, List[str], float |
             name = f"Channel{len(channel_names)}"
         channel_names.append(str(name))
 
-    projection = data.max(axis=0)  # (C, Y, X)
+    _, channel_count, _, _ = harmonised.shape
+    if len(channel_names) != channel_count:
+        channel_names = [
+            channel_names[idx] if idx < len(channel_names) else f"Channel{idx}"
+            for idx in range(channel_count)
+        ]
+
+    projection = harmonised.max(axis=0)  # (C, Y, X)
     return projection.astype(np.float32), channel_names, voxel_size
 
 

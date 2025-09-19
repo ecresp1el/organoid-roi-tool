@@ -61,20 +61,39 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     limit = args.limit if args.limit is None or args.limit > 0 else None
-    processed = 0
-    for nd2_path in nd2_files:
-        if limit is not None and processed >= limit:
-            break
-        figure_path = generate_panel_a_figure(
-            nd2_path,
-            output_dir=args.output_dir,
-        )
-        print(f"Saved Panel A figure -> {figure_path}")
-        processed += 1
+    total = len(nd2_files) if limit is None else min(limit, len(nd2_files))
+    if total == 0:
+        print("No ND2 files selected after applying limit", file=sys.stderr)
+        return 1
 
+    completed = 0
+    attempt = 0
+    for nd2_path in nd2_files:
+        if limit is not None and attempt >= limit:
+            break
+        attempt += 1
+        try:
+            figure_path = generate_panel_a_figure(
+                nd2_path,
+                output_dir=args.output_dir,
+            )
+        except Exception as exc:  # pragma: no cover - runtime reporting only
+            print(
+                f"[{attempt}/{total}] Skipped {nd2_path.name}: {exc}",
+                file=sys.stderr,
+            )
+            continue
+
+        completed += 1
+        print(f"[{attempt}/{total}] Saved Panel A figure -> {figure_path}")
+
+    if completed == 0:
+        print("No Panel A figures were generated", file=sys.stderr)
+        return 1
+
+    print(f"Finished: {completed} figure(s) saved (requested limit={limit or 'all'})")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
