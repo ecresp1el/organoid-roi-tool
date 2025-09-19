@@ -1,4 +1,28 @@
-"""Generate a multi-panel workflow figure from an ND2 imaging field."""
+"""Generate the multi-panel workflow figure on a fixed 1920×1164 grid.
+
+This routine enforces the following assumptions/layout:
+
+* The canvas is divided into three rows (A/B, C/D, E–H) with strict pixel
+  dimensions, 48 px margins, and 24 px gutters.  Each panel owns its clipping
+  region, caption strip (32 px), and internal colour-bar space (10 px wide).
+* Panel B visualises segmentation steps; region labels are *not* rendered as
+  numbers – the label map is shown as a semi-transparent fill.
+* Panel C/D display a small set of representative nuclei: Panel C renders up to
+  four cropped ROIs, Panel D shows the matching per-channel patches for one of
+  those cells.  The ring overlay is produced by dilating the mask a configurable
+  number of iterations (``ring_iterations``).
+* The bottom row contains: histogram (Panel E), cumulative distribution (Panel
+  F), marker scatter (Panel G), and a density map (Panel H).  All statistics are
+  computed from the per-cell table generated earlier in the pipeline.
+
+Additional assumptions:
+
+* ``channel_aliases`` (global JSON + CLI overrides) control the labelling of
+  channels; DAPI is always present, additional markers are derived from channel
+  names.
+* ``segmentation_settings`` may include ``max_size`` (filters oversized nuclei)
+  and ``ring_iterations`` (controls dilation radius for visualisation only).
+"""
 from __future__ import annotations
 
 from collections import OrderedDict
@@ -806,79 +830,114 @@ def generate_workflow_figure(
     add_caption(panel_d["x"], panel_d["y"], panel_d["w"], caption_text)
 
     # Panel E ------------------------------------------------------------
-    panel_e = dict(x=MARGIN_LEFT, y=row3_y, w=592, h=ROW3_H)
-    axE = add_axes_pixels(panel_e["x"], panel_e["y"] + CAPTION, panel_e["w"], panel_e["h"] - CAPTION)
-    axE.tick_params(labelsize=12)
+    # Row 3 panels (E–H) -------------------------------------------------
     channel_cols = [col for col in cell_table.columns if col.startswith("mean_")]
     non_dapi_channels = [col for col in channel_cols if "dapi" not in col.lower()]
     if not non_dapi_channels:
         non_dapi_channels = channel_cols
+
+    row3_panel_w = (FIG_W - 2 * MARGIN_LEFT - 3 * ROW_GAP) / 4
+    row3_panels = [
+        dict(label="E", title="E – Marker distributions", text="Histogram", x=MARGIN_LEFT),
+        dict(label="F", title="F – Cumulative distributions", text="Cumulative", x=MARGIN_LEFT + row3_panel_w + ROW_GAP),
+        dict(label="G", title="G – Marker co-expression", text="Scatter", x=MARGIN_LEFT + 2 * (row3_panel_w + ROW_GAP)),
+        dict(label="H", title="H – Marker density", text="Density", x=MARGIN_LEFT + 3 * (row3_panel_w + ROW_GAP)),
+    ]
+
+    # Panel E – histogram
+    panel_e = dict(x=row3_panels[0]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
+    axE = add_axes_pixels(panel_e["x"], panel_e["y"] + CAPTION, panel_e["w"], panel_e["h"] - CAPTION)
+    axE.tick_params(labelsize=12)
     if channel_cols:
         for col in non_dapi_channels[:2]:
             values = cell_table[col]
             label = column_label_map.get(col, col.replace("mean_", ""))
-            axE.hist(values, bins=30, alpha=0.5, label=f"Histogram {label}")
-            if len(values) > 0:
-                values_sorted = np.sort(values)
-                ecdf = np.linspace(0, 1, len(values_sorted), endpoint=False)
-                axE.plot(values_sorted, ecdf, linewidth=2, label=f"ECDF {label}")
+            axE.hist(values, bins=30, alpha=0.6, label=label)
         axE.set_xlabel("Mean intensity (a.u.)", fontsize=12)
-        axE.set_ylabel("Density / cumulative", fontsize=12)
+        axE.set_ylabel("Count", fontsize=12)
         axE.legend(fontsize=10)
     else:
         axE.text(0.5, 0.5, "No intensity data", ha="center", va="center", fontsize=12)
         axE.set_axis_off()
     add_panel_label(axE, "E")
-    add_caption(panel_e["x"], panel_e["y"], panel_e["w"], "E – Marker distributions across cells")
+    add_caption(panel_e["x"], panel_e["y"], panel_e["w"], "E – Marker distributions")
 
-    # Panel F ------------------------------------------------------------
-    panel_f = dict(x=panel_e["x"] + panel_e["w"] + ROW_GAP, y=row3_y, w=592, h=ROW3_H)
-    axF_width = panel_f["w"] - (cbar_w + cbar_pad)
-    axF = add_axes_pixels(panel_f["x"], panel_f["y"] + CAPTION, axF_width, panel_f["h"] - CAPTION)
-    axF.tick_params(labelsize=12)
+    # Panel F – cumulative distributions
+    panel_f = dict(x=row3_panels[1]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
+    axF_cdf = add_axes_pixels(panel_f["x"], panel_f["y"] + CAPTION, panel_f["w"], panel_f["h"] - CAPTION)
+    axF_cdf.tick_params(labelsize=12)
+    if channel_cols:
+        for col in non_dapi_channels[:2]:
+            values = np.sort(cell_table[col])
+            if len(values) == 0:
+                continue
+            ecdf = np.linspace(0, 1, len(values), endpoint=False)
+            label = column_label_map.get(col, col.replace("mean_", ""))
+            axF_cdf.step(values, ecdf, where="post", label=label)
+        axF_cdf.set_xlabel("Mean intensity (a.u.)", fontsize=12)
+        axF_cdf.set_ylabel("Cumulative proportion", fontsize=12)
+        axF_cdf.set_ylim(0, 1)
+        axF_cdf.legend(fontsize=10)
+    else:
+        axF_cdf.text(0.5, 0.5, "No intensity data", ha="center", va="center", fontsize=12)
+        axF_cdf.set_axis_off()
+    add_panel_label(axF_cdf, "F")
+    add_caption(panel_f["x"], panel_f["y"], panel_f["w"], "F – Cumulative distributions")
+
+    # Determine channel pair for scatter/density
+    scatter_ax = None
+    density_ax = None
     if len(channel_cols) >= 2:
         if len(non_dapi_channels) >= 2:
             xcol, ycol = non_dapi_channels[:2]
         else:
             xcol, ycol = channel_cols[:2]
-        scatter = axF.scatter(
-            cell_table[xcol],
-            cell_table[ycol],
-            s=15,
-            c=cell_table["area_px"],
-            cmap="viridis",
-            alpha=0.7,
-        )
-        axF.set_xlabel(f"Mean {column_label_map.get(xcol, xcol.replace('mean_', ''))}", fontsize=12)
-        axF.set_ylabel(f"Mean {column_label_map.get(ycol, ycol.replace('mean_', ''))}", fontsize=12)
-        caxF = add_axes_pixels(panel_f["x"] + axF_width + cbar_pad, panel_f["y"] + CAPTION, cbar_w, panel_f["h"] - CAPTION)
-        cb = fig.colorbar(scatter, cax=caxF)
+        x_label = column_label_map.get(xcol, xcol.replace("mean_", ""))
+        y_label = column_label_map.get(ycol, ycol.replace("mean_", ""))
+        x_values = cell_table[xcol].to_numpy()
+        y_values = cell_table[ycol].to_numpy()
+    else:
+        xcol = ycol = x_label = y_label = None
+        x_values = y_values = np.array([])
+
+    # Panel G – scatter
+    panel_g = dict(x=row3_panels[2]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
+    axG_scatter_width = panel_g["w"] - (cbar_w + cbar_pad)
+    axG_scatter = add_axes_pixels(panel_g["x"], panel_g["y"] + CAPTION, axG_scatter_width, panel_g["h"] - CAPTION)
+    axG_scatter.tick_params(labelsize=12)
+    if xcol is not None and len(x_values) >= 1:
+        scatter = axG_scatter.scatter(x_values, y_values, s=15, c=cell_table["area_px"], cmap="viridis", alpha=0.7)
+        axG_scatter.set_xlabel(f"Mean {x_label}", fontsize=12)
+        axG_scatter.set_ylabel(f"Mean {y_label}", fontsize=12)
+        caxG = add_axes_pixels(panel_g["x"] + axG_scatter_width + cbar_pad, panel_g["y"] + CAPTION, cbar_w, panel_g["h"] - CAPTION)
+        cb = fig.colorbar(scatter, cax=caxG)
         cb.ax.set_ylabel("Cell area (px)", fontsize=11)
         cb.ax.tick_params(labelsize=10)
     else:
-        axF.text(0.5, 0.5, "Need ≥2 channels", ha="center", va="center", fontsize=12)
-        axF.set_axis_off()
-    add_panel_label(axF, "F")
-    add_caption(panel_f["x"], panel_f["y"], panel_f["w"], "F – Marker co-expression per cell")
+        axG_scatter.text(0.5, 0.5, "Need ≥2 markers", ha="center", va="center", fontsize=12)
+        axG_scatter.set_axis_off()
+    add_panel_label(axG_scatter, "G")
+    add_caption(panel_g["x"], panel_g["y"], panel_g["w"], "G – Marker co-expression")
 
-    # Panel G ------------------------------------------------------------
-    panel_g = dict(x=panel_f["x"] + panel_f["w"] + ROW_GAP, y=row3_y, w=592, h=ROW3_H)
-    axG = add_axes_pixels(panel_g["x"], panel_g["y"] + CAPTION, panel_g["w"], panel_g["h"] - CAPTION)
-    axG.axis("off")
-    outputs_text = "\n".join(
-        [
-            "output/",
-            " ├─ masks/ sample_labels.tif",
-            " ├─ qc/ sample_mask_build.png",
-            " ├─ cells/ sample_cells.csv",
-            " ├─ plots/ marker_histograms.png",
-            " ├─ plots/ marker_ecdf.png",
-            " └─ plots/ marker_scatter.png",
-        ]
-    )
-    axG.text(0.0, 1.0, outputs_text, family="monospace", fontsize=11, ha="left", va="top")
-    add_panel_label(axG, "G")
-    add_caption(panel_g["x"], panel_g["y"], panel_g["w"], "G – Workflow outputs")
+    # Panel H – density plot
+    panel_h = dict(x=row3_panels[3]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
+    axH = add_axes_pixels(panel_h["x"], panel_h["y"] + CAPTION, panel_h["w"], panel_h["h"] - CAPTION)
+    axH.tick_params(labelsize=12)
+    if xcol is not None and len(x_values) >= 10:
+        heatmap, xedges, yedges = np.histogram2d(x_values, y_values, bins=40)
+        heatmap = np.ma.masked_where(heatmap == 0, heatmap)
+        extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+        im = axH.imshow(heatmap.T, origin="lower", extent=extent, aspect="auto", cmap="magma")
+        axH.set_xlabel(f"Mean {x_label}", fontsize=12)
+        axH.set_ylabel(f"Mean {y_label}", fontsize=12)
+        caxH = add_axes_pixels(panel_h["x"] + panel_h["w"] - cbar_w, panel_h["y"] + CAPTION, cbar_w, panel_h["h"] - CAPTION)
+        cb = fig.colorbar(im, cax=caxH)
+        cb.ax.tick_params(labelsize=10)
+    else:
+        axH.text(0.5, 0.5, "Need ≥2 markers", ha="center", va="center", fontsize=12)
+        axH.set_axis_off()
+    add_panel_label(axH, "H")
+    add_caption(panel_h["x"], panel_h["y"], panel_h["w"], "H – Marker density")
 
     figure_path.parent.mkdir(parents=True, exist_ok=True)
     save_dpi = FIG_W / fig.get_size_inches()[0]
