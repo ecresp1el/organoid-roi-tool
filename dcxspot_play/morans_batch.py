@@ -181,22 +181,19 @@ def process_row(
     neighbors: int,
     permutations: int,
     local_permutations: int,
-    overlay_dir: Path,
-    heatmap_dir: Path,
-    pmap_dir: Path,
+    overlay_dir: Optional[Path],
+    heatmap_dir: Optional[Path],
+    pmap_dir: Optional[Path],
+    panel_requested: bool,
     random_state: Optional[int],
-) -> Tuple[Dict[str, object], Dict[str, object]]:
-    """Compute Moran statistics and assemble panel data for a single ROI.
+) -> Tuple[Dict[str, object], Optional[Dict[str, object]]]:
+    """Compute Moran’s I statistics for a single ROI and collect panel data."""
 
-    The function operates on raw fluorescence pixels inside the ROI mask,
-    performs mean-centering before Moran computations, and gathers all
-    intermediate arrays needed to render the 6×N workflow panel described in
-    the module docstring.
-    """
     brightfield_path = resolve_brightfield_path(row, project_root)
     brightfield, mask, fluor = load_roi_images(row, project_root)
     mask = mask.astype(bool, copy=False)
     base_name = brightfield_path.stem
+
     fluor_masked = apply_roi_mask(fluor, mask, outside="zero")
 
     global_stats = permutation_test_global(
@@ -211,62 +208,75 @@ def process_row(
     div_day = row.get("div_day")
     if pd.notna(div_day):
         time_str = f"DIV{int(div_day)} {time_str}"
-    panel_entry: Dict[str, object] = {
-        "time_label": time_str.strip(),
-        "time_hours": row.get("time_hours"),
-    }
+
+    panel_entry: Optional[Dict[str, object]] = None
     local_results: Dict[str, Path] = {}
 
+    # detection labels for ROI overlay and cluster counts
     detection_labels = load_detection_labels(brightfield_path)
-    detection_mask = (
-        detection_labels.astype(bool)
-        if detection_labels is not None and detection_labels.shape == mask.shape
-        else np.zeros_like(mask, dtype=bool)
-    )
+    if detection_labels is not None and detection_labels.shape == mask.shape:
+        detection_mask = detection_labels.astype(bool)
+        labels_roi = detection_labels[mask]
+        cluster_count = int(np.unique(labels_roi[labels_roi > 0]).size)
+    else:
+        detection_mask = np.zeros_like(mask, dtype=bool)
+        cluster_count = 0
 
-    bf_norm = _normalize_for_display(brightfield, mask)
-    bf_norm = np.where(mask, bf_norm, 0.0)
-    base_norm = _normalize_for_display(fluor_masked, mask)
-    base_norm = np.where(mask, base_norm, 0.0)
+    # Determine whether we need to render any figures/panels
+    need_heatmap = heatmap_dir is not None
+    need_overlay = overlay_dir is not None
+    need_pmap = pmap_dir is not None and local_permutations > 0
+    panel_needed = panel_requested
+    visuals_needed = need_heatmap or need_overlay or need_pmap or panel_needed
 
-    y0, y1, x0, x1 = _roi_bbox(mask)
-    mask_crop = mask[y0:y1, x0:x1]
-    bf_crop = bf_norm[y0:y1, x0:x1].copy()
-    bf_crop[~mask_crop] = 0.0
-    raw_display = base_norm[y0:y1, x0:x1].copy()
-    raw_display[~mask_crop] = 0.0
-    detection_crop = (detection_mask & mask)[y0:y1, x0:x1]
+    bf_display = _normalize_for_display(brightfield, mask) if panel_needed else None
+    raw_display = _normalize_for_display(fluor_masked, mask) if (visuals_needed or panel_needed) else None
 
-    panel_entry.update(
-        {
+    if panel_needed and bf_display is not None and raw_display is not None:
+        y0, y1, x0, x1 = _roi_bbox(mask)
+        mask_crop = mask[y0:y1, x0:x1]
+        bf_crop = np.where(mask_crop, bf_display[y0:y1, x0:x1], 0.0)
+        raw_crop = np.where(mask_crop, raw_display[y0:y1, x0:x1], 0.0)
+        island_crop = (detection_mask & mask)[y0:y1, x0:x1]
+        panel_entry = {
+            "time_label": time_str.strip(),
+            "time_hours": row.get("time_hours"),
             "bf_display": bf_crop,
-            "raw_display": raw_display,
+            "raw_display": raw_crop,
             "mask_crop": mask_crop,
-            "island_mask": detection_crop,
+            "island_mask": island_crop,
+            "cluster_count": cluster_count,
         }
-    )
 
-    if heatmap_dir or overlay_dir or local_permutations > 0:
+    local_map = None
+    local_norm = None
+    p_map = None
+
+    if visuals_needed or local_permutations > 0:
         _, _, _, _, _, xc, neighbor_sum_xc, _ = morans_i_snapshot(
-            fluor_masked, mask, neighbors=neighbors
+            fluor_masked,
+            mask,
+            neighbors=neighbors,
         )
         local_map = local_moran_map(xc, mask, neighbor_sum_xc)
 
-        heatmap_path = heatmap_dir / f"{base_name}_local_moran.png"
-        _save_heatmap(local_map, mask, heatmap_path, "Local Moran (Ii)")
-        local_results["local_heatmap"] = heatmap_path
+        if need_heatmap:
+            heatmap_path = heatmap_dir / f"{base_name}_local_moran.png"
+            _save_heatmap(local_map, mask, heatmap_path, "Local Moran (Ii)")
+            local_results["local_heatmap"] = heatmap_path
 
-        _, local_norm, _, overlay_rgb = _render_overlay_arrays(
-            fluor_masked, mask, local_map
-        )
+        if need_overlay:
+            _, local_norm, _, overlay_rgb = _render_overlay_arrays(
+                fluor_masked,
+                mask,
+                local_map,
+            )
+            overlay_path = overlay_dir / f"{base_name}_local_overlay.png"
+            plt.imsave(overlay_path, overlay_rgb)
+            local_results["local_overlay"] = overlay_path
 
-        overlay_path = overlay_dir / f"{base_name}_local_overlay.png"
-        plt.imsave(overlay_path, overlay_rgb)
-        local_results["local_overlay"] = overlay_path
-
-        p_map = None
-        if local_permutations > 0:
-            Ii_map, p_vals = local_moran_permutation_pvals(
+        if need_pmap:
+            Ii_map, p_map = local_moran_permutation_pvals(
                 fluor_masked,
                 mask,
                 neighbors=neighbors,
@@ -275,36 +285,26 @@ def process_row(
             )
             local_map = Ii_map
             p_path = pmap_dir / f"{base_name}_local_pvals.png"
-            _save_heatmap(p_vals, mask, p_path, "Local Moran p-values")
+            _save_heatmap(p_map, mask, p_path, "Local Moran p-values")
             local_results["local_pmap"] = p_path
-            p_map = p_vals
 
-        local_map = np.where(mask, local_map, np.nan)
-        local_raw_crop = local_map[y0:y1, x0:x1]
-        local_norm_crop = local_norm[y0:y1, x0:x1]
-        local_norm_crop = np.where(mask_crop, local_norm_crop, np.nan)
-
-        p_crop = None
+    if panel_entry is not None:
+        y0, y1, x0, x1 = _roi_bbox(mask)
+        if local_map is not None:
+            local_map = np.where(mask, local_map, np.nan)
+            panel_entry["local_raw"] = local_map[y0:y1, x0:x1]
+        else:
+            panel_entry["local_raw"] = None
+        if local_norm is not None:
+            local_norm = np.where(mask, local_norm, np.nan)
+            panel_entry["local_norm"] = local_norm[y0:y1, x0:x1]
+        else:
+            panel_entry["local_norm"] = None
         if p_map is not None:
             p_map = np.where(mask, p_map, np.nan)
-            p_crop = p_map[y0:y1, x0:x1]
-            p_crop = np.where(mask_crop, p_crop, np.nan)
-
-        panel_entry.update(
-            {
-                "local_raw": local_raw_crop,
-                "local_norm": local_norm_crop,
-                "p_map": p_crop,
-            }
-        )
-    else:
-        panel_entry.update(
-            {
-                "local_raw": None,
-                "local_norm": None,
-                "p_map": None,
-            }
-        )
+            panel_entry["p_map"] = p_map[y0:y1, x0:x1]
+        else:
+            panel_entry["p_map"] = None
 
     record = {
         "image_relpath": row.get("image_relpath"),
@@ -317,7 +317,6 @@ def process_row(
     return record, panel_entry
 
 
-
 def _save_well_panel(
     prefix: str,
     well: str,
@@ -326,7 +325,7 @@ def _save_well_panel(
 ) -> None:
     """Render the multi-row workflow panel for a single well."""
 
-    filtered = [e for e in entries if e.get("raw_display") is not None]
+    filtered = [e for e in entries if e is not None and e.get("raw_display") is not None]
     if not filtered:
         return
 
@@ -379,6 +378,7 @@ def _save_well_panel(
         local_raw = entry.get("local_raw")
         local_norm = entry.get("local_norm")
         p_map = entry.get("p_map")
+        cluster_count = entry.get("cluster_count", 0)
         time_label = entry.get("time_label") or ""
 
         ax_bf = axes[0, idx]
@@ -407,6 +407,17 @@ def _save_well_panel(
             clusters_rgb[island_mask] = (1 - 0.6) * clusters_rgb[island_mask] + 0.6 * np.array([1.0, 0.0, 1.0])
             ax_clusters.contour(island_mask.astype(float), levels=[0.5], colors="#ff00ff", linewidths=0.8)
         ax_clusters.imshow(clusters_rgb, interpolation="nearest")
+        ax_clusters.text(
+            0.02,
+            0.95,
+            f"{cluster_count} islands",
+            color="white",
+            fontsize=8,
+            ha="left",
+            va="top",
+            transform=ax_clusters.transAxes,
+            bbox=dict(facecolor="black", alpha=0.3, boxstyle="round,pad=0.2"),
+        )
         ax_clusters.set_xticks([])
         ax_clusters.set_yticks([])
 
@@ -464,10 +475,14 @@ def _save_well_panel(
 
     fig.subplots_adjust(left=0.06, right=0.82, top=0.93, bottom=0.08, wspace=0.05, hspace=0.12)
     legend_text = (
-        "Legend:\n"
-        "cyan = ROI (analysis region)\n"
-        "magenta = detected clusters\n"
-        "coolwarm heatmaps = Local Moran Ii\n"
+        "Legend:
+"
+        "cyan = ROI (analysis region)
+"
+        "magenta = detected clusters
+"
+        "coolwarm heatmaps = Local Moran Ii
+"
         "row 7 colors = Local Moran for p<0.05 (one-tailed, positive autocorr)"
     )
     fig.text(0.85, 0.5, legend_text, fontsize=8, va="center")
@@ -547,6 +562,11 @@ def parse_args() -> argparse.Namespace:
         help="Directory to save per-well Moran panels (default: <project-root>/plots/morans/panels).",
     )
     parser.add_argument(
+        "--analysis-only",
+        action="store_true",
+        help="Skip figure generation; only write the global Moran CSV.",
+    )
+    parser.add_argument(
         "--wells",
         nargs="*",
         help="Optional list of wells to process (e.g. H11 H12). Case-insensitive.",
@@ -590,6 +610,18 @@ def main() -> None:
         output_csv = default_output_dir / "morans_global.csv"
     else:
         output_csv.parent.mkdir(parents=True, exist_ok=True)
+
+    analysis_only = args.analysis_only
+
+    if not analysis_only:
+        heatmap_dir = (args.heatmap_dir or (default_output_dir / "heatmaps")).expanduser().resolve()
+        overlay_dir = (args.overlay_dir or (default_output_dir / "overlays")).expanduser().resolve()
+        panel_dir = (args.panel_dir or (default_output_dir / "panels")).expanduser().resolve()
+        pmap_dir = (heatmap_dir / "p_values").resolve()
+        for directory in (heatmap_dir, overlay_dir, panel_dir, pmap_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+    else:
+        heatmap_dir = overlay_dir = panel_dir = pmap_dir = None
 
     df = pd.read_csv(roi_path)
     if df.empty:
