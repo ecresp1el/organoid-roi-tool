@@ -239,11 +239,16 @@ def _default_channel_resolver(path: Path) -> Sequence[str] | None:
             names: list[str] = []
             if channels:
                 for channel in channels:
+                    channel_meta = None
                     name = getattr(channel, "name", None)
                     if not name:
-                        name = getattr(channel, "channel", None)
+                        channel_meta = getattr(channel, "channel", None)
+                        if channel_meta is not None:
+                            name = getattr(channel_meta, "name", None)
                     if not name and isinstance(channel, dict):
                         name = channel.get("name")
+                    if not name and channel_meta is not None:
+                        name = str(channel_meta)
                     if name:
                         names.append(str(name))
             if names:
