@@ -20,10 +20,22 @@ from .workflow_figure import (
 from .project_config import load_channel_aliases
 
 
-def _get_channel_images(projection: Tuple[float], channel_names: Iterable[str]) -> Dict[str, float]:
-    return {
-        name: _normalise_for_display(projection[idx]) for idx, name in enumerate(channel_names)
-    }
+def _get_channel_images(
+    projection: np.ndarray,
+    channel_names: Iterable[str],
+    scaling_overrides: Mapping[str, Tuple[float, float]] | None = None,
+) -> Dict[str, np.ndarray]:
+    images: Dict[str, np.ndarray] = {}
+    for idx, name in enumerate(channel_names):
+        arr = projection[idx]
+        if scaling_overrides and name in scaling_overrides:
+            vmin, vmax = scaling_overrides[name]
+            denom = max(vmax - vmin, 1e-9)
+            arr = np.clip((arr - vmin) / denom, 0.0, 1.0)
+        else:
+            arr = _normalise_for_display(arr)
+        images[name] = arr
+    return images
 
 
 def generate_panel_a_figure(
@@ -33,6 +45,7 @@ def generate_panel_a_figure(
     figure_name: str | None = None,
     channel_aliases: Mapping[str, str] | None = None,
     project_root: str | Path | None = None,
+    channel_scaling: Mapping[str, Tuple[float, float]] | None = None,
 ) -> Path:
     """Render a 1×4 panel figure (merged RGB, DAPI, Cy5, GFP) and save to disk."""
 
@@ -44,7 +57,7 @@ def generate_panel_a_figure(
     project_root_path = inferred_root.expanduser().resolve()
 
     projection, channel_names, pixel_size_um = _load_nd2_projection(nd2_path)
-    channel_images = _get_channel_images(projection, channel_names)
+    channel_images = _get_channel_images(projection, channel_names, channel_scaling)
     rgb, rgb_mapping = _build_rgb_image(channel_images)
     config_aliases = load_channel_aliases(project_root_path)
     overrides = dict(config_aliases)
