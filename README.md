@@ -198,6 +198,110 @@ Measurements CSVs (upsert one row per image):
 - Local folder CSV: `<image-folder>/roi_measurements.csv`
 - If your image path looks like `<project-root>/wells/...`, a project CSV is also updated: `<project-root>/roi_measurements.csv`
 
+---
+
+## 5) Automated Plotting & Reporting CLI Tools
+
+Each helper script below runs inside the Conda environment (`conda activate organoid_roi_incucyte_imaging`). Paths can be absolute or relative. All scripts read project-level channel aliases from `<project>/channel_aliases.json` (optional) and accept `--alias token=Label` overrides.
+
+### 5.1 Panel A strip generator
+
+```
+python tools/generate_panel_a_figures.py /path/to/project_or_nd2 \
+  --limit 5 \
+  --alias gfp=LHX6 --alias cy5=SOX2 \
+  --project-root /path/to/project  # optional override
+  --output-dir /path/to/custom/panel_a  # optional
+```
+
+Creates one 1×N PNG per ND2 file showing:
+- merged RGB (DAPI→blue, Cy5→red, GFP→green) and up to two single-channel pseudo-colour panels,
+- 10 px internal colourbars and scale bars,
+- saved in `<project>/panel_a/<nd2_stem>_panelA.png` by default.
+
+Options:
+- `--project-root` force where channel aliases/outputs are read and written.
+- `--output-dir` change the destination folder.
+- `--limit` limit how many ND2 files to process.
+- `--alias token=Label` (repeatable) map raw channel names to biology (e.g. `cy5=SOX2`).
+
+### 5.2 Grouped Panel A summary
+
+```
+python tools/build_panel_a_summary.py /path/to/project \
+  --groups "DIV 18" "DIV 23" \
+  --alias gfp=LHX6 --alias cy5=SOX2
+```
+
+Generates individual Panel A strips (if not already present) and combines them into a grouped PNG (per timepoint row). Output saved to `<project>/panel_a/panel_a_summary.png` unless `--output-dir` is specified.
+
+### 5.3 Workflow figure (8-panel analytic report)
+
+```
+python tools/generate_workflow_figure.py \
+  "/path/to/file.nd2" \
+  --alias gfp=LHX6 --alias cy5=SOX2 \
+  --smoothing-sigma 0.8 \
+  --otsu-offset 0.06 \
+  --footprint-radius 1 \
+  --min-distance 4 \
+  --min-size 80 \
+  --max-size 1500 \
+  --open-radius 1 \
+  --tophat-radius 25 \
+  --ring-iterations 16
+```
+
+Outputs a fixed-layout 1920 × 1164 PNG to `<project>/cellcount_project/figures/<nd2_stem>_workflow.png` and the matching per-cell CSV to `<project>/cellcount_project/cells/`. Panel layout:
+
+- **A**: raw ND2 overview (RGB + individual channels).
+- **B**: stepwise DAPI segmentation (six subpanels with internal annotations).
+- **C**: 2×2 grid of sampled nuclei (IDs 1/1171/2336/3506 when available) with cyan masks and translucent orange rings.
+- **D**: per-channel patches for one sampled cell (DAPI + markers).
+- **E**: marker intensity histograms.
+- **F**: cumulative distributions (ECDF).
+- **G**: scatter plot (marker vs marker, colour-coded by cell area).
+- **H**: FACS-style density (log-scaled hexbin).
+
+Segmentation options:
+
+| Flag | Purpose |
+|------|---------|
+| `--smoothing-sigma` | Gaussian blur σ applied to DAPI.
+| `--otsu-offset` | Additive tweak to Otsu threshold (positive trims background).
+| `--min-size` | Remove connected components smaller than this (pixels).
+| `--max-size` | Remove components larger than this (pixels).
+| `--min-distance` | Minimum separation between watershed seeds.
+| `--footprint-radius` | Seed footprint radius (`2r + 1` square) for `peak_local_max`.
+| `--open-radius` / `--close-radius` | Morphological opening/closing after thresholding.
+| `--tophat-radius` | White top-hat radius to correct illumination before smoothing.
+| `--ring-iterations` | Binary dilation iterations for visualising ROI rings (Panel C/D only).
+
+### 5.4 Timepoint grids for LHX6 or Nestin/DCX projects
+
+```
+python tools/plot_lhx6_grid.py /path/to/project \
+  --marker-token gfp --div18-token "DIV 18" --div23-token "DIV 23"
+
+python tools/plot_nestin_dcx.py /path/to/project \
+  --nestin-token gfp --dcx-token cy5 \
+  --div18-token "DIV 18" --div23-token "DIV 23"
+```
+
+Both scripts rescale DIV 18 marker intensities to the DIV 23 range and output grids to `<project>/panel_a/` (one PNG per marker). Options let you rename tokens, adjust grouping tokens, and override output names.
+
+### 5.5 Marker intensity summaries
+
+```
+python tools/plot_marker_timepoints.py /path/to/project \
+  --timepoint "DIV 18" --timepoint "DIV 23" \
+  --alias gfp=LHX6 --alias cy5=SOX2
+```
+
+Creates one boxplot+scatter figure per marker showing mean raw intensity distributions per requested timepoint. Saved in `<project>/analysis/<Marker>_intensity.png`. Use `--skip-token` to exclude channels (default skips DAPI).
+
+All scripts accept `--alias` overrides; if no aliases are provided, raw channel names are used. For reproducible outputs, ensure the Conda environment (`organoid_roi_incucyte_imaging`) is active before running these commands.
+
 Each row includes:
 - image_relpath (portable key), image_path (absolute, for convenience)
 - well, day, time
