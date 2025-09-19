@@ -547,6 +547,11 @@ def parse_args() -> argparse.Namespace:
         help="Directory to save per-well Moran panels (default: <project-root>/plots/morans/panels).",
     )
     parser.add_argument(
+        "--wells",
+        nargs="*",
+        help="Optional list of wells to process (e.g. H11 H12). Case-insensitive.",
+    )
+    parser.add_argument(
         "--div-start",
         type=int,
         default=cfg.get("div_start"),
@@ -589,6 +594,12 @@ def main() -> None:
     df = pd.read_csv(roi_path)
     if df.empty:
         raise SystemExit("roi_measurements.csv is empty.")
+
+    if args.wells:
+        wells_upper = {w.upper() for w in args.wells}
+        df = df[df["well"].str.upper().isin(wells_upper)]
+        if df.empty:
+            raise SystemExit(f"No rows found in {roi_path} for wells: {', '.join(args.wells)}")
 
     if "day_index" not in df.columns:
         df["day_index"] = df["day"].apply(_parse_day)

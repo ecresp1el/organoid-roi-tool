@@ -243,7 +243,7 @@ python -m dcxspot_play.morans_batch --project-root /path/to/project --permutatio
 - `heatmaps/p_values/<image>_local_pvals.png` – Local Moran permutation p-values (default `--local-permutations 199`; set to 0 to skip).
 - `panels/<prefix>_well_<WELL>_moran_panel.(png|pdf|svg)` – six-row workflow montage per well (raw fluorescence → ROI mask → detected islands → Local Moran raw → Local Moran scaled → p<0.05 significance overlay).
 
-Use `--output-csv`, `--heatmap-dir`, `--overlay-dir`, and `--panel-dir` to customise destinations, and tune `--permutations` / `--local-permutations` for the desired runtime vs. precision. The batch runner processes wells sequentially and prints progress so you can monitor long analyses.
+Use `--wells H11 H12` to restrict the run to specific wells, adjust `--output-csv`, `--heatmap-dir`, `--overlay-dir`, and `--panel-dir` to customise destinations, and tune `--permutations` / `--local-permutations` for the desired runtime vs. precision. The batch runner processes wells sequentially and prints progress so you can monitor long analyses.
 
 ---
 
