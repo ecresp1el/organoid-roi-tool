@@ -512,12 +512,42 @@ def generate_workflow_figure(
             channel_patches[name] = (img_patch, mask_patch)
 
     # ------------------------------------------------------------------ figure layout
-    fig = plt.figure(figsize=(20, 16))
-    gs = gridspec.GridSpec(3, 3, figure=fig, height_ratios=[1.1, 0.9, 0.9], width_ratios=[1.05, 1.2, 1.0])
-    fig.subplots_adjust(hspace=0.35, wspace=0.32)
+    FIG_W, FIG_H = 1920, 1164
+    dpi = 100
+    fig = plt.figure(figsize=(FIG_W / dpi, FIG_H / dpi), dpi=dpi)
+
+    def add_axes_pixels(x: float, y: float, width: float, height: float) -> plt.Axes:
+        return fig.add_axes([x / FIG_W, y / FIG_H, width / FIG_W, height / FIG_H])
+
+    def add_caption(x: float, y: float, width: float, text: str) -> None:
+        fig.text((x + width / 2) / FIG_W, (y + CAPTION / 2) / FIG_H, text, fontsize=18, fontweight="bold", ha="center", va="center")
+
+    def add_panel_label(ax: plt.Axes, label: str) -> None:
+        ax.text(-0.08, 1.02, label, transform=ax.transAxes, fontsize=18, fontweight="bold", ha="right", va="bottom")
+
+    MARGIN_LEFT = 48
+    MARGIN_TOP = 48
+    ROW_GAP = 24
+    CAPTION = 32
+    ROW1_H = 420
+    ROW2_H = 300
+    ROW3_H = 300
+
+    row1_y = FIG_H - MARGIN_TOP - ROW1_H
+    row2_y = row1_y - ROW_GAP - ROW2_H
+    row3_y = row2_y - ROW_GAP - ROW3_H
+
+    cbar_w = 10
+    cbar_pad = 6
+    sub_gap = 12
 
     # Panel A ------------------------------------------------------------
-    panelA_gs = gs[0, 0].subgridspec(2, 2)
+    panel_a = dict(x=MARGIN_LEFT, y=row1_y, w=540, h=ROW1_H)
+    panel_a_inner_h = panel_a["h"] - CAPTION
+    panel_a_inner_y = panel_a["y"] + CAPTION
+    slot_w = (panel_a["w"] - sub_gap) / 2
+    slot_h = (panel_a_inner_h - sub_gap) / 2
+
     rgb, rgb_mapping = _build_rgb_image(channel_images)
     red_channel = rgb_mapping.get("red", dapi_key)
     green_channel = rgb_mapping.get("green", dapi_key)
@@ -528,42 +558,42 @@ def generate_workflow_figure(
 
     panelA_defs = [
         (rgb, "Merged RGB", None),
-        (
-            channel_images.get(dapi_key, next(iter(channel_images.values()))),
-            long_aliases.get(dapi_key, "DAPI"),
-            dapi_cmap,
-        ),
-        (
-            channel_images.get(red_channel, next(iter(channel_images.values()))),
-            long_aliases.get(red_channel, red_channel),
-            red_cmap,
-        ),
-        (
-            channel_images.get(green_channel, next(iter(channel_images.values()))),
-            long_aliases.get(green_channel, green_channel),
-            green_cmap,
-        ),
+        (channel_images.get(dapi_key, next(iter(channel_images.values()))), long_aliases.get(dapi_key, "DAPI"), dapi_cmap),
+        (channel_images.get(red_channel, next(iter(channel_images.values()))), long_aliases.get(red_channel, red_channel), red_cmap),
+        (channel_images.get(green_channel, next(iter(channel_images.values()))), long_aliases.get(green_channel, green_channel), green_cmap),
     ]
 
-    panelA_axes = [fig.add_subplot(panelA_gs[i, j]) for i in range(2) for j in range(2)]
-    for ax, (img, title, cmap) in zip(panelA_axes, panelA_defs):
+    panelA_axes: List[plt.Axes] = []
+    for idx, (img, title, cmap) in enumerate(panelA_defs):
+        row = idx // 2
+        col = idx % 2
+        slot_x = panel_a["x"] + col * (slot_w + sub_gap)
+        slot_y = panel_a_inner_y + (1 - row) * (slot_h + sub_gap)
+        has_cbar = cmap is not None
+        img_w = slot_w - (cbar_w + cbar_pad) if has_cbar else slot_w
+        ax = add_axes_pixels(slot_x, slot_y, img_w, slot_h)
         if cmap is None:
-            im = ax.imshow(img)
+            ax.imshow(img)
         else:
-            im = ax.imshow(img, cmap=cmap)
-        ax.set_title(title, fontsize=9)
+            ax.imshow(img, cmap=cmap)
         ax.axis("off")
-        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
-        cbar.ax.tick_params(labelsize=7)
         _add_scale_bar(ax, pixel_size_um, img.shape)
+        ax.set_title(title, fontsize=9, pad=4)
+        if has_cbar:
+            cax = add_axes_pixels(slot_x + img_w + cbar_pad, slot_y, cbar_w, slot_h)
+            norm = mcolors.Normalize(vmin=0, vmax=1)
+            sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+            fig.colorbar(sm, cax=cax).ax.tick_params(labelsize=7)
+        panelA_axes.append(ax)
 
-    _annotate_panel(panelA_axes[0], "A")
+    if panelA_axes:
+        add_panel_label(panelA_axes[0], "A")
     mapping_parts = []
     for color in ("red", "green", "blue"):
         name = rgb_mapping.get(color)
-        if not name:
-            continue
-        mapping_parts.append(f"{long_aliases.get(name, name)} → {color}")
+        if name:
+            mapping_parts.append(f"{long_aliases.get(name, name)} → {color}")
+    add_caption(panel_a["x"], panel_a["y"], panel_a["w"], "A – Raw field of view (ND2)")
     if mapping_parts:
         panelA_axes[0].text(
             0.02,
@@ -578,8 +608,12 @@ def generate_workflow_figure(
         )
 
     # Panel B ------------------------------------------------------------
-    panelB_gs = gs[0, 1:].subgridspec(2, 3)
-    b_axes = [fig.add_subplot(panelB_gs[i, j]) for i in range(2) for j in range(3)]
+    panel_b = dict(x=panel_a["x"] + panel_a["w"] + ROW_GAP, y=row1_y, w=1244, h=ROW1_H)
+    panel_b_inner_h = panel_b["h"] - CAPTION
+    panel_b_inner_y = panel_b["y"] + CAPTION
+    slot_w_b = (panel_b["w"] - 2 * sub_gap) / 3
+    slot_h_b = (panel_b_inner_h - sub_gap) / 2
+
     sigma = seg_settings.get("smoothing_sigma", 1.2)
     otsu_offset = seg_settings.get("otsu_offset", 0.0)
     min_size_setting = seg_settings.get("min_size")
@@ -610,97 +644,60 @@ def generate_workflow_figure(
         final_subtitle += f" (max {int(max_size_setting)} px)"
 
     b_images = [
-        (seg.raw, "B1. Raw DAPI", raw_subtitle),
-        (seg.smoothed, "B2. Gaussian smoothed", f"σ = {sigma:g}"),
-        (seg.binary.astype(float), "B3. Otsu threshold", f"Offset Δ={otsu_offset:+.2f}"),
-        (seg.cleaned.astype(float), "B4. Mask cleaned", clean_subtitle),
-        (_normalise_for_display(seg.distance), "B5. Distance + seeds", seeds_subtitle),
-        (seg.labels, "B6. Labeled nuclei", final_subtitle),
+        (seg.raw, "B1. Raw DAPI", raw_subtitle, "gray", (0, 1)),
+        (seg.smoothed, "B2. Gaussian smoothed", f"σ = {sigma:g}", "gray", (0, 1)),
+        (seg.binary.astype(float), "B3. Otsu threshold", f"Offset Δ={otsu_offset:+.2f}", "gray", (0, 1)),
+        (seg.cleaned.astype(float), "B4. Mask cleaned", clean_subtitle, "gray", (0, 1)),
+        (_normalise_for_display(seg.distance), "B5. Distance + seeds", seeds_subtitle, "magma", None),
+        (seg.labels, "B6. Labeled nuclei", final_subtitle, "turbo", None),
     ]
 
-    for ax, (img, title, subtitle) in zip(b_axes, b_images):
+    panelB_axes: List[plt.Axes] = []
+    for idx, (img, title, subtitle, cmap, norm_bounds) in enumerate(b_images):
+        row = idx // 3
+        col = idx % 3
+        slot_x = panel_b["x"] + col * (slot_w_b + sub_gap)
+        slot_y = panel_b_inner_y + (1 - row) * (slot_h_b + sub_gap)
+        ax = add_axes_pixels(slot_x, slot_y, slot_w_b - (cbar_w + cbar_pad), slot_h_b)
         if title.startswith("B5"):
-            im = ax.imshow(img, cmap="magma")
+            ax.imshow(img, cmap=cmap)
             ax.contour(seg.markers > 0, colors="cyan", linewidths=0.6)
-            cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
-            cbar.ax.tick_params(labelsize=7)
         elif title.startswith("B6"):
-            ax.imshow(seg.raw, cmap="gray", alpha=0.7)
-            im = ax.imshow(seg.labels, cmap="turbo", alpha=0.5)
-            for prop in measure.regionprops(seg.labels):
-                y, x = prop.centroid
-                text = ax.text(
-                    x,
-                    y,
-                    str(prop.label),
-                    fontsize=6,
-                    color="white",
-                    ha="center",
-                    va="center",
-                )
-                text.set_path_effects([patheffects.withStroke(linewidth=1.2, foreground="black")])
-            cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
-            cbar.ax.tick_params(labelsize=7)
+            ax.imshow(seg.raw, cmap="gray", alpha=0.6)
+            masked = np.ma.masked_where(seg.labels == 0, seg.labels)
+            ax.imshow(masked, cmap="turbo", alpha=0.45)
         else:
-            cmap = "gray" if img.ndim == 2 else "turbo"
-            im = ax.imshow(img, cmap=cmap)
-            cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
-            cbar.ax.tick_params(labelsize=7)
-            if "Threshold" in title or "Mask" in title:
-                cbar.set_ticks([0, 1])
-        ax.set_title(title, fontsize=8, pad=1)
-        ax.text(0.5, -0.18, subtitle, transform=ax.transAxes, fontsize=7, ha="center")
+            ax.imshow(img, cmap=cmap)
         ax.axis("off")
         _add_scale_bar(ax, pixel_size_um, seg.raw.shape)
+        ax.set_title(title, fontsize=9, pad=4)
+        ax.text(0.5, -0.18, subtitle, transform=ax.transAxes, fontsize=8, ha="center", va="top")
 
-    _annotate_panel(b_axes[0], "B")
-    b_axes[3].text(0.0, -0.18, "Stepwise segmentation pipeline", transform=b_axes[3].transAxes, fontsize=10)
+        cax = add_axes_pixels(slot_x + slot_w_b - cbar_w, slot_y, cbar_w, slot_h_b)
+        if norm_bounds is None:
+            norm = None
+        else:
+            norm = mcolors.Normalize(vmin=norm_bounds[0], vmax=norm_bounds[1])
+        sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        fig.colorbar(sm, cax=cax).ax.tick_params(labelsize=7)
+        panelB_axes.append(ax)
+
+    if panelB_axes:
+        add_panel_label(panelB_axes[0], "B")
+    add_caption(panel_b["x"], panel_b["y"], panel_b["w"], "B – Stepwise segmentation pipeline")
 
     # Panel C ------------------------------------------------------------
-    axC = fig.add_subplot(gs[1, 0])
-    im_patch = axC.imshow(patch_image, cmap="gray")
+    panel_c = dict(x=MARGIN_LEFT, y=row2_y, w=780, h=ROW2_H)
+    axC = add_axes_pixels(panel_c["x"], panel_c["y"] + CAPTION, panel_c["w"], panel_c["h"] - CAPTION)
+    axC.imshow(patch_image, cmap="gray")
     axC.contour(patch_mask.astype(float), levels=[0.5], colors="cyan", linewidths=1.5)
     if patch_ring.any():
         axC.contour(patch_ring.astype(float), levels=[0.5], colors="orange", linestyles="--", linewidths=1.0)
-    axC.set_title("Per-cell measurement region")
     axC.axis("off")
-    _annotate_panel(axC, "C")
-    cbarC = fig.colorbar(im_patch, ax=axC, fraction=0.046, pad=0.02)
-    cbarC.ax.tick_params(labelsize=7)
     _add_scale_bar(axC, pixel_size_um, patch_image.shape)
-
-    # arrows towards channel insets
-    inset_positions = []
-    for idx, (name, (img, mask)) in enumerate(channel_patches.items()):
-        inset = fig.add_axes([
-            axC.get_position().x1 + 0.02,
-            axC.get_position().y1 - (idx + 1) * 0.18,
-            0.12,
-            0.16,
-        ])
-        im_inset = inset.imshow(img, cmap="gray")
-        inset.contour(mask.astype(float), levels=[0.5], colors="cyan", linewidths=0.6)
-        inset.set_title(long_aliases.get(name, name), fontsize=8)
-        inset.axis("off")
-        cbar_inset = fig.colorbar(im_inset, ax=inset, fraction=0.35, pad=0.02)
-        cbar_inset.ax.tick_params(labelsize=6)
-        inset_positions.append(inset.get_position())
-
-    for inset_pos in inset_positions:
-        arrow = FancyArrowPatch(
-            (axC.get_position().x1, axC.get_position().y1 - 0.1),
-            (inset_pos.x0, inset_pos.y0 + inset_pos.height / 2),
-            transform=fig.transFigure,
-            arrowstyle="->",
-            mutation_scale=15,
-            lw=1.5,
-            color="white",
-        )
-        fig.patches.append(arrow)
-
-    measurement_channels = [
-        long_aliases[name] for name in panel_channels if name != dapi_key and name in long_aliases
-    ]
+    add_panel_label(axC, "C")
+    measurement_channels = [long_aliases[name] for name in panel_channels if name != dapi_key and name in long_aliases]
     if measurement_channels:
         if len(measurement_channels) == 1:
             channel_text = measurement_channels[0]
@@ -710,55 +707,16 @@ def generate_workflow_figure(
             channel_text = ", ".join(measurement_channels[:2]) + "…"
     else:
         channel_text = "additional markers"
-    axC.text(
-        0.02,
-        -0.12,
-        f"Compute mean intensity per channel inside mask;\n{channel_text} shown here.",
-        transform=axC.transAxes,
-        fontsize=9,
-    )
-
-    # Panel D ------------------------------------------------------------
-    axD = fig.add_subplot(gs[1, 1:])
-    axD.axis("off")
-    _annotate_panel(axD, "D")
-
-    display_cols = ["cell_id", "centroid_y", "centroid_x", "area_px"]
-    channel_cols = [col for col in cell_table.columns if col.startswith("mean_")]
-    display_cols.extend(channel_cols[:3])
-
-    if not cell_table.empty:
-        table_data = cell_table[display_cols].head(6).round(1)
-        mpl_table = axD.table(
-            cellText=table_data.values,
-            colLabels=[
-                (
-                    f"mean {column_label_map.get(col, col.replace('mean_', ''))}"
-                    if col.startswith("mean_")
-                    else col
-                )
-                for col in display_cols
-            ],
-            loc="center",
-            cellLoc="center",
-            colLoc="center",
-        )
-        mpl_table.auto_set_font_size(False)
-        mpl_table.set_fontsize(9)
-        mpl_table.scale(1, 1.3)
-    else:
-        axD.text(0.5, 0.5, "No nuclei detected", ha="center", va="center", fontsize=12)
-
-    axD.set_title("Per-cell measurement table (one row per nucleus)")
+    add_caption(panel_c["x"], panel_c["y"], panel_c["w"], f"C – Per-cell measurement region ({channel_text})")
 
     # Panel E ------------------------------------------------------------
-    axE = fig.add_subplot(gs[2, 0])
-    _annotate_panel(axE, "E")
-
+    panel_e = dict(x=MARGIN_LEFT, y=row3_y, w=592, h=ROW3_H)
+    axE = add_axes_pixels(panel_e["x"], panel_e["y"] + CAPTION, panel_e["w"], panel_e["h"] - CAPTION)
+    axE.tick_params(labelsize=12)
+    channel_cols = [col for col in cell_table.columns if col.startswith("mean_")]
     non_dapi_channels = [col for col in channel_cols if "dapi" not in col.lower()]
     if not non_dapi_channels:
         non_dapi_channels = channel_cols
-
     if channel_cols:
         for col in non_dapi_channels[:2]:
             values = cell_table[col]
@@ -768,25 +726,25 @@ def generate_workflow_figure(
                 values_sorted = np.sort(values)
                 ecdf = np.linspace(0, 1, len(values_sorted), endpoint=False)
                 axE.plot(values_sorted, ecdf, linewidth=2, label=f"ECDF {label}")
-
-        axE.set_xlabel("Mean intensity (a.u.)")
-        axE.set_ylabel("Density / cumulative fraction")
-        axE.set_title("Marker distributions across cells")
-        axE.legend(fontsize=8)
+        axE.set_xlabel("Mean intensity (a.u.)", fontsize=12)
+        axE.set_ylabel("Density / cumulative", fontsize=12)
+        axE.legend(fontsize=10)
     else:
         axE.text(0.5, 0.5, "No intensity data", ha="center", va="center", fontsize=12)
         axE.set_axis_off()
+    add_panel_label(axE, "E")
+    add_caption(panel_e["x"], panel_e["y"], panel_e["w"], "E – Marker distributions across cells")
 
     # Panel F ------------------------------------------------------------
-    axF = fig.add_subplot(gs[2, 1])
-    _annotate_panel(axF, "F")
-
+    panel_f = dict(x=panel_e["x"] + panel_e["w"] + ROW_GAP, y=row3_y, w=592, h=ROW3_H)
+    axF_width = panel_f["w"] - (cbar_w + cbar_pad)
+    axF = add_axes_pixels(panel_f["x"], panel_f["y"] + CAPTION, axF_width, panel_f["h"] - CAPTION)
+    axF.tick_params(labelsize=12)
     if len(channel_cols) >= 2:
         if len(non_dapi_channels) >= 2:
             xcol, ycol = non_dapi_channels[:2]
         else:
             xcol, ycol = channel_cols[:2]
-
         scatter = axF.scatter(
             cell_table[xcol],
             cell_table[ycol],
@@ -795,21 +753,22 @@ def generate_workflow_figure(
             cmap="viridis",
             alpha=0.7,
         )
-        axF.set_xlabel(f"Mean {column_label_map.get(xcol, xcol.replace('mean_', ''))}")
-        axF.set_ylabel(f"Mean {column_label_map.get(ycol, ycol.replace('mean_', ''))}")
-        axF.set_title("Marker co-expression per cell")
-        cbar_scatter = fig.colorbar(scatter, ax=axF, fraction=0.046, pad=0.02)
-        cbar_scatter.ax.set_ylabel("Cell area (px)", fontsize=8)
-        cbar_scatter.ax.tick_params(labelsize=7)
+        axF.set_xlabel(f"Mean {column_label_map.get(xcol, xcol.replace('mean_', ''))}", fontsize=12)
+        axF.set_ylabel(f"Mean {column_label_map.get(ycol, ycol.replace('mean_', ''))}", fontsize=12)
+        caxF = add_axes_pixels(panel_f["x"] + axF_width + cbar_pad, panel_f["y"] + CAPTION, cbar_w, panel_f["h"] - CAPTION)
+        cb = fig.colorbar(scatter, cax=caxF)
+        cb.ax.set_ylabel("Cell area (px)", fontsize=11)
+        cb.ax.tick_params(labelsize=10)
     else:
         axF.text(0.5, 0.5, "Need ≥2 channels", ha="center", va="center", fontsize=12)
         axF.set_axis_off()
+    add_panel_label(axF, "F")
+    add_caption(panel_f["x"], panel_f["y"], panel_f["w"], "F – Marker co-expression per cell")
 
     # Panel G ------------------------------------------------------------
-    axG = fig.add_subplot(gs[2, 2])
-    _annotate_panel(axG, "G")
+    panel_g = dict(x=panel_f["x"] + panel_f["w"] + ROW_GAP, y=row3_y, w=592, h=ROW3_H)
+    axG = add_axes_pixels(panel_g["x"], panel_g["y"] + CAPTION, panel_g["w"], panel_g["h"] - CAPTION)
     axG.axis("off")
-    axG.set_title("Workflow outputs")
     outputs_text = "\n".join(
         [
             "output/",
@@ -821,10 +780,12 @@ def generate_workflow_figure(
             " └─ plots/ marker_scatter.png",
         ]
     )
-    axG.text(0.05, 0.9, outputs_text, family="monospace", fontsize=11, verticalalignment="top")
+    axG.text(0.0, 1.0, outputs_text, family="monospace", fontsize=11, ha="left", va="top")
+    add_panel_label(axG, "G")
+    add_caption(panel_g["x"], panel_g["y"], panel_g["w"], "G – Workflow outputs")
 
     figure_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figure_path, dpi=300, bbox_inches="tight")
+    fig.savefig(figure_path, dpi=300)
     plt.close(fig)
 
     return figure_path
