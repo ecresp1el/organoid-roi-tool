@@ -270,6 +270,8 @@ class SegmentationOutputs:
     distance: np.ndarray
     markers: np.ndarray
     labels: np.ndarray
+    tophat_radius: int = 0
+    max_size: int | None = None
 
 
 def _segment_dapi(
@@ -282,8 +284,14 @@ def _segment_dapi(
     peak_footprint: int = 25,
     open_radius: int = 0,
     close_radius: int = 0,
+    tophat_radius: int = 0,
+    max_size: int | None = None,
 ) -> SegmentationOutputs:
-    raw = _normalise_for_display(dapi_img)
+    working = dapi_img.astype(np.float32, copy=True)
+    if tophat_radius and tophat_radius > 0:
+        selem = morphology.disk(tophat_radius)
+        working = morphology.white_tophat(working, footprint=selem)
+    raw = _normalise_for_display(working)
     smoothed = filters.gaussian(raw, sigma=smoothing_sigma)
     threshold = filters.threshold_otsu(smoothed) + otsu_offset
     binary = smoothed > threshold
@@ -315,6 +323,11 @@ def _segment_dapi(
 
     labels = segmentation.watershed(-distance, markers, mask=cleaned)
 
+    if max_size is not None and max_size > 0:
+        for region in measure.regionprops(labels):
+            if region.area > max_size:
+                labels[labels == region.label] = 0
+
     return SegmentationOutputs(
         raw=raw,
         smoothed=smoothed,
@@ -323,6 +336,8 @@ def _segment_dapi(
         distance=distance,
         markers=markers,
         labels=labels,
+        tophat_radius=int(tophat_radius or 0),
+        max_size=max_size,
     )
 
 
@@ -567,13 +582,40 @@ def generate_workflow_figure(
     b_axes = [fig.add_subplot(panelB_gs[i, j]) for i in range(2) for j in range(3)]
     sigma = seg_settings.get("smoothing_sigma", 1.2)
     otsu_offset = seg_settings.get("otsu_offset", 0.0)
+    min_size_setting = seg_settings.get("min_size")
+    max_size_setting = seg_settings.get("max_size")
+    footprint_setting = seg_settings.get("peak_footprint")
+    footprint_radius = None
+    if footprint_setting:
+        footprint_radius = (footprint_setting - 1) // 2
+
+    raw_subtitle = "Nuclear stain"
+    if seg.tophat_radius:
+        raw_subtitle = f"White tophat r={seg.tophat_radius}px"
+
+    clean_subtitle = "Remove noise, fill holes"
+    if min_size_setting:
+        clean_subtitle = f"Min area ≥ {int(min_size_setting)} px"
+        if max_size_setting:
+            clean_subtitle += f", max ≤ {int(max_size_setting)} px"
+    elif max_size_setting:
+        clean_subtitle = f"Max area ≤ {int(max_size_setting)} px"
+
+    seeds_subtitle = "Find watershed peaks"
+    if footprint_radius is not None:
+        seeds_subtitle = f"Footprint r={footprint_radius}px"
+
+    final_subtitle = "Final segmentation"
+    if max_size_setting:
+        final_subtitle += f" (max {int(max_size_setting)} px)"
+
     b_images = [
-        (seg.raw, "B1. Raw DAPI", "Nuclear stain"),
+        (seg.raw, "B1. Raw DAPI", raw_subtitle),
         (seg.smoothed, "B2. Gaussian smoothed", f"σ = {sigma:g}"),
         (seg.binary.astype(float), "B3. Otsu threshold", f"Offset Δ={otsu_offset:+.2f}"),
-        (seg.cleaned.astype(float), "B4. Mask cleaned", "Remove noise, fill holes"),
-        (_normalise_for_display(seg.distance), "B5. Distance + seeds", "Find watershed peaks"),
-        (seg.labels, "B6. Labeled nuclei", "Final segmentation"),
+        (seg.cleaned.astype(float), "B4. Mask cleaned", clean_subtitle),
+        (_normalise_for_display(seg.distance), "B5. Distance + seeds", seeds_subtitle),
+        (seg.labels, "B6. Labeled nuclei", final_subtitle),
     ]
 
     for ax, (img, title, subtitle) in zip(b_axes, b_images):

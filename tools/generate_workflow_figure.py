@@ -98,6 +98,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Radius (pixels) for morphological closing after opening",
     )
+    seg_group.add_argument(
+        "--tophat-radius",
+        type=int,
+        default=None,
+        help="White tophat radius (pixels) applied to DAPI prior to smoothing",
+    )
+    seg_group.add_argument(
+        "--max-size",
+        type=int,
+        default=None,
+        help="Maximum nucleus size (pixels); larger regions are discarded",
+    )
 
     return parser.parse_args(argv)
 
@@ -130,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
         seg_params["open_radius"] = args.open_radius
     if args.close_radius is not None:
         seg_params["close_radius"] = args.close_radius
+    if args.tophat_radius is not None:
+        seg_params["tophat_radius"] = args.tophat_radius
+    if args.max_size is not None:
+        seg_params["max_size"] = args.max_size
 
     alias_overrides: dict[str, str] = {}
     for item in args.alias:
