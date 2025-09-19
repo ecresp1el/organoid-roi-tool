@@ -492,31 +492,39 @@ def generate_workflow_figure(
     if props:
         num_samples = min(len(props), 5)
         indices = np.linspace(0, len(props) - 1, num_samples, dtype=int)
+        height, width = seg.raw.shape
+
         for idx in indices:
             prop = props[idx]
             label_id = prop.label
             mask = seg.labels == label_id
             if mask.sum() == 0:
                 continue
-            patch_image, patch_mask = _extract_patch(seg.raw, mask)
+
+            coords = np.argwhere(mask)
+            min_r, min_c = coords.min(axis=0)
+            max_r, max_c = coords.max(axis=0) + 1
+            min_r = max(min_r - 4, 0)
+            min_c = max(min_c - 4, 0)
+            max_r = min(max_r + 4, height)
+            max_c = min(max_c + 4, width)
+            slices = np.s_[min_r:max_r, min_c:max_c]
+
+            patch_image = seg.raw[slices]
+            patch_mask = mask[slices]
             dilated = ndi.binary_dilation(mask, iterations=8)
-            ring_mask = np.logical_and(dilated, ~mask)
-            if ring_mask.any():
-                patch_ring = _extract_patch(seg.raw, ring_mask)[1]
-            else:
-                patch_ring = np.zeros_like(patch_mask, dtype=bool)
+            ring_clean = np.logical_and(dilated, ~mask)[slices]
 
             channel_patches: Dict[str, np.ndarray] = {}
             for name, image in channel_images.items():
-                ch_patch, _ = _extract_patch(image, mask)
-                channel_patches[name] = ch_patch
+                channel_patches[name] = image[slices]
 
             cell_samples.append(
                 {
                     "label": label_id,
                     "patch": patch_image,
                     "mask": patch_mask,
-                    "ring": patch_ring,
+                    "ring": ring_clean,
                     "channels": channel_patches,
                 }
             )
@@ -707,10 +715,11 @@ def generate_workflow_figure(
     slot_h_c = (panel_c["h"] - CAPTION - (grid_rows - 1) * sub_gap) / grid_rows
 
     c_samples = cell_samples[: grid_rows * grid_cols]
+    panelC_axes: List[plt.Axes] = []
     if not c_samples:
         axC_blank = add_axes_pixels(panel_c["x"], panel_c["y"] + CAPTION, panel_c["w"], panel_c["h"] - CAPTION)
         axC_blank.axis("off")
-        add_panel_label(axC_blank, "C")
+        panelC_axes.append(axC_blank)
     else:
         for idx, sample in enumerate(c_samples):
             row = idx // grid_cols
@@ -721,11 +730,23 @@ def generate_workflow_figure(
             ax.imshow(sample["patch"], cmap="gray")
             ax.contour(sample["mask"].astype(float), levels=[0.5], colors="cyan", linewidths=1.2)
             if sample["ring"].any():
-                ax.contour(sample["ring"].astype(float), levels=[0.5], colors="orange", linestyles="--", linewidths=1.0)
+                overlay = np.ma.masked_where(~sample["ring"], sample["ring"])
+                ax.imshow(overlay, cmap=cm.Oranges, alpha=0.35, interpolation="nearest")
             ax.axis("off")
             _add_scale_bar(ax, pixel_size_um, sample["patch"].shape)
-            ax.text(0.02, 0.02, f"Cell {sample['label']}", transform=ax.transAxes, fontsize=9, color="white", ha="left", va="bottom", bbox={"boxstyle": "round", "facecolor": "black", "alpha": 0.4, "edgecolor": "none"})
-        add_panel_label(ax, "C")
+            ax.text(
+                0.02,
+                0.02,
+                f"Cell {sample['label']}",
+                transform=ax.transAxes,
+                fontsize=9,
+                color="white",
+                ha="left",
+                va="bottom",
+                bbox={"boxstyle": "round", "facecolor": "black", "alpha": 0.4, "edgecolor": "none"},
+            )
+            panelC_axes.append(ax)
+    add_panel_label(panelC_axes[0], "C")
     measurement_channels = [long_aliases[name] for name in panel_channels if name != dapi_key and name in long_aliases]
     if measurement_channels:
         if len(measurement_channels) == 1:
@@ -742,16 +763,20 @@ def generate_workflow_figure(
     panel_d_x = panel_c["x"] + panel_c["w"] + ROW_GAP
     panel_d_w = FIG_W - MARGIN_LEFT - panel_d_x
     panel_d = dict(x=panel_d_x, y=row2_y, w=panel_d_w, h=ROW2_H)
-    d_sample = cell_samples[0]
-    channels_for_d = [dapi_key] + [name for name in channel_names if name != dapi_key and name in d_sample["channels"]]
+    d_sample = cell_samples[0] if cell_samples else None
+    channels_for_d = []
+    if d_sample is not None:
+        channels_for_d = [dapi_key] + [name for name in panel_channels if name != dapi_key and name in d_sample["channels"]]
+        channels_for_d = [name for name in channels_for_d if name in d_sample["channels"]]
     n_slots_d = len(channels_for_d)
     if n_slots_d == 0:
         axD_blank = add_axes_pixels(panel_d["x"], panel_d["y"] + CAPTION, panel_d["w"], panel_d["h"] - CAPTION)
         axD_blank.axis("off")
+        add_panel_label(axD_blank, "D")
     else:
-        slot_w_d = (panel_d["w"] - (n_slots_d - 1) * sub_gap)
-        slot_w_d = slot_w_d / n_slots_d
+        slot_w_d = (panel_d["w"] - (n_slots_d - 1) * sub_gap) / n_slots_d
         slot_h_d = panel_d["h"] - CAPTION
+        axes_d: List[plt.Axes] = []
         for idx, name in enumerate(channels_for_d):
             slot_x = panel_d["x"] + idx * (slot_w_d + sub_gap)
             ax = add_axes_pixels(slot_x, panel_d["y"] + CAPTION, slot_w_d - (cbar_w + cbar_pad), slot_h_d)
@@ -764,8 +789,12 @@ def generate_workflow_figure(
             sm = plt.cm.ScalarMappable(norm=mcolors.Normalize(vmin=0, vmax=1), cmap=cmap)
             sm.set_array([])
             fig.colorbar(sm, cax=cax).ax.tick_params(labelsize=7)
-        add_panel_label(ax, "D")
-    add_caption(panel_d["x"], panel_d["y"], panel_d["w"], f"D – Channel patches for cell {d_sample['label']}")
+            axes_d.append(ax)
+        add_panel_label(axes_d[0], "D")
+    caption_text = "D – Channel patches"
+    if d_sample is not None:
+        caption_text += f" for cell {d_sample['label']}"
+    add_caption(panel_d["x"], panel_d["y"], panel_d["w"], caption_text)
 
     # Panel E ------------------------------------------------------------
     panel_e = dict(x=MARGIN_LEFT, y=row3_y, w=592, h=ROW3_H)
