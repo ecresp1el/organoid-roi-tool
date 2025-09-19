@@ -73,6 +73,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Square footprint size for peak_local_max (set 0/None for default)",
     )
+    seg_group.add_argument(
+        "--footprint-radius",
+        type=int,
+        default=None,
+        help="Alternative to --peak-footprint: radial size (pixels) for peak_local_max window",
+    )
+    seg_group.add_argument(
+        "--open-radius",
+        type=int,
+        default=None,
+        help="Radius (pixels) for morphological opening after thresholding",
+    )
+    seg_group.add_argument(
+        "--close-radius",
+        type=int,
+        default=None,
+        help="Radius (pixels) for morphological closing after opening",
+    )
 
     return parser.parse_args(argv)
 
@@ -99,6 +117,12 @@ def main(argv: list[str] | None = None) -> int:
         seg_params["min_distance"] = args.min_distance
     if args.peak_footprint is not None:
         seg_params["peak_footprint"] = args.peak_footprint
+    if args.footprint_radius is not None:
+        seg_params["peak_footprint"] = args.footprint_radius * 2 + 1
+    if args.open_radius is not None:
+        seg_params["open_radius"] = args.open_radius
+    if args.close_radius is not None:
+        seg_params["close_radius"] = args.close_radius
 
     figure_path = generate_workflow_figure(
         nd2_path,
@@ -115,4 +139,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

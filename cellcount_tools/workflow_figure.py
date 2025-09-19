@@ -215,11 +215,20 @@ def _segment_dapi(
     min_size: int = 80,
     min_distance: int = 10,
     peak_footprint: int = 25,
+    open_radius: int = 0,
+    close_radius: int = 0,
 ) -> SegmentationOutputs:
     raw = _normalise_for_display(dapi_img)
     smoothed = filters.gaussian(raw, sigma=smoothing_sigma)
     threshold = filters.threshold_otsu(smoothed) + otsu_offset
     binary = smoothed > threshold
+
+    if open_radius and open_radius > 0:
+        selem = morphology.disk(open_radius)
+        binary = morphology.opening(binary, selem)
+    if close_radius and close_radius > 0:
+        selem = morphology.disk(close_radius)
+        binary = morphology.closing(binary, selem)
 
     cleaned = morphology.remove_small_objects(binary, min_size=min_size)
     cleaned = ndi.binary_fill_holes(cleaned)
