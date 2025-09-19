@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Tuple
 
 import matplotlib.colors as mcolors
+from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -924,14 +925,21 @@ def generate_workflow_figure(
     axH = add_axes_pixels(panel_h["x"], panel_h["y"] + CAPTION, panel_h["w"], panel_h["h"] - CAPTION)
     axH.tick_params(labelsize=12)
     if xcol is not None and len(x_values) >= 10:
-        heatmap, xedges, yedges = np.histogram2d(x_values, y_values, bins=40)
-        heatmap = np.ma.masked_where(heatmap == 0, heatmap)
-        extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-        im = axH.imshow(heatmap.T, origin="lower", extent=extent, aspect="auto", cmap="magma")
+        hb = axH.hexbin(
+            x_values,
+            y_values,
+            gridsize=80,
+            cmap="magma",
+            mincnt=1,
+            linewidths=0.0,
+            norm=LogNorm(),
+        )
+        axH.set_facecolor("#0a0a0a")
         axH.set_xlabel(f"Mean {x_label}", fontsize=12)
         axH.set_ylabel(f"Mean {y_label}", fontsize=12)
         caxH = add_axes_pixels(panel_h["x"] + panel_h["w"] - cbar_w, panel_h["y"] + CAPTION, cbar_w, panel_h["h"] - CAPTION)
-        cb = fig.colorbar(im, cax=caxH)
+        cb = fig.colorbar(hb, cax=caxH)
+        cb.ax.set_ylabel("Cell count (log)", fontsize=11)
         cb.ax.tick_params(labelsize=10)
     else:
         axH.text(0.5, 0.5, "Need ≥2 markers", ha="center", va="center", fontsize=12)
