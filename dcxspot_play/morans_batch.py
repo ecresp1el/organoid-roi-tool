@@ -475,14 +475,10 @@ def _save_well_panel(
 
     fig.subplots_adjust(left=0.06, right=0.82, top=0.93, bottom=0.08, wspace=0.05, hspace=0.12)
     legend_text = (
-        "Legend:
-"
-        "cyan = ROI (analysis region)
-"
-        "magenta = detected clusters
-"
-        "coolwarm heatmaps = Local Moran Ii
-"
+        "Legend\n"
+        "cyan = ROI (analysis region)\n"
+        "magenta = detected clusters\n"
+        "coolwarm heatmaps = Local Moran Ii\n"
         "row 7 colors = Local Moran for p<0.05 (one-tailed, positive autocorr)"
     )
     fig.text(0.85, 0.5, legend_text, fontsize=8, va="center")
