@@ -680,6 +680,7 @@ def main() -> None:
                 overlay_dir=overlay_dir,
                 heatmap_dir=heatmap_dir,
                 pmap_dir=pmap_dir,
+                panel_requested=not args.analysis_only,
                 random_state=args.random_state,
             )
             rows.append(record)
