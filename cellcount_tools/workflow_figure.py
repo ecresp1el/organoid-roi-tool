@@ -473,7 +473,10 @@ def generate_workflow_figure(
 
     dapi_key = next((n for n in channel_names if "dapi" in n.lower()), channel_names[-1])
     seg_settings = segmentation_settings or {}
-    seg = _segment_dapi(projection[channel_names.index(dapi_key)], **seg_settings)
+    ring_iterations_setting = int(seg_settings.get("ring_iterations", 8))
+    seg_kwargs = dict(seg_settings)
+    seg_kwargs.pop("ring_iterations", None)
+    seg = _segment_dapi(projection[channel_names.index(dapi_key)], **seg_kwargs)
 
     labelled_channels = {name: projection[idx] for idx, name in enumerate(channel_names)}
     cell_table = _compute_cell_table(seg.labels, labelled_channels)
@@ -489,6 +492,7 @@ def generate_workflow_figure(
     # prepare sample cells for panels C and D
     props = measure.regionprops(seg.labels)
     cell_samples: List[dict] = []
+    ring_iterations = ring_iterations_setting
     if props:
         num_samples = min(len(props), 5)
         indices = np.linspace(0, len(props) - 1, num_samples, dtype=int)
@@ -512,7 +516,7 @@ def generate_workflow_figure(
 
             patch_image = seg.raw[slices]
             patch_mask = mask[slices]
-            dilated = ndi.binary_dilation(mask, iterations=8)
+            dilated = ndi.binary_dilation(mask, iterations=ring_iterations)
             ring_clean = np.logical_and(dilated, ~mask)[slices]
 
             channel_patches: Dict[str, np.ndarray] = {}
@@ -757,7 +761,12 @@ def generate_workflow_figure(
             channel_text = ", ".join(measurement_channels[:2]) + "…"
     else:
         channel_text = "additional markers"
-    add_caption(panel_c["x"], panel_c["y"], panel_c["w"], f"C – Sampled per-cell measurement regions ({channel_text})")
+    add_caption(
+        panel_c["x"],
+        panel_c["y"],
+        panel_c["w"],
+        f"C – Sampled per-cell measurement regions ({channel_text}, ring {ring_iterations}px)",
+    )
 
     # Panel D ------------------------------------------------------------
     panel_d_x = panel_c["x"] + panel_c["w"] + ROW_GAP

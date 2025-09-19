@@ -110,6 +110,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Maximum nucleus size (pixels); larger regions are discarded",
     )
+    seg_group.add_argument(
+        "--ring-iterations",
+        type=int,
+        default=None,
+        help="Binary dilation iterations for ROI rings (default: 8)",
+    )
 
     return parser.parse_args(argv)
 
@@ -146,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         seg_params["tophat_radius"] = args.tophat_radius
     if args.max_size is not None:
         seg_params["max_size"] = args.max_size
+    if args.ring_iterations is not None:
+        seg_params["ring_iterations"] = args.ring_iterations
 
     alias_overrides: dict[str, str] = {}
     for item in args.alias:
