@@ -16,6 +16,8 @@ from nd2 import ND2File
 from scipy import ndimage as ndi
 from skimage import feature, filters, measure, morphology, segmentation
 
+from .project_config import load_channel_aliases
+
 
 # ---------------------------------------------------------------------------
 # data helpers
@@ -399,6 +401,7 @@ def generate_workflow_figure(
     if project_root is None:
         project_root = nd2_path.parent / "cellcount_project"
     project_root = Path(project_root).expanduser().resolve()
+    project_root_path = project_root
     project_root.mkdir(parents=True, exist_ok=True)
 
     figure_dir = project_root / figure_subdir
@@ -414,7 +417,12 @@ def generate_workflow_figure(
     channel_images = OrderedDict(
         (name, _normalise_for_display(projection[idx])) for idx, name in enumerate(channel_names)
     )
-    alias_table = build_alias_table(channel_aliases)
+
+    project_aliases = load_channel_aliases(project_root_path)
+    alias_overrides = dict(project_aliases)
+    if channel_aliases:
+        alias_overrides.update({k.lower(): v.strip() for k, v in channel_aliases.items()})
+    alias_table = build_alias_table(alias_overrides or None)
     panel_channels = _panel_channel_sequence(channel_names)
 
     short_aliases: Dict[str, str] = {}

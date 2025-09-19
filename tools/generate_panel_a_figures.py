@@ -25,7 +25,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=None,
-        help="Destination directory for figures (default: <nd2_dir>/panel_a)",
+        help="Destination directory for figures (default: <project_root>/panel_a)",
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=None,
+        help="Explicit project root (default: ND2 parent directory)",
     )
     parser.add_argument(
         "--alias",
@@ -87,11 +93,16 @@ def main(argv: list[str] | None = None) -> int:
         if limit is not None and attempt >= limit:
             break
         attempt += 1
+        project_root = args.project_root or nd2_path.parent
+        output_dir = args.output_dir
+        if output_dir is None:
+            output_dir = project_root / "panel_a"
         try:
             figure_path = generate_panel_a_figure(
                 nd2_path,
-                output_dir=args.output_dir,
+                output_dir=output_dir,
                 channel_aliases=alias_overrides or None,
+                project_root=project_root,
             )
         except Exception as exc:  # pragma: no cover - runtime reporting only
             print(
