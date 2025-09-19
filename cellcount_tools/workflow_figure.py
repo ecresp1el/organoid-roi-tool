@@ -519,12 +519,22 @@ def generate_workflow_figure(
     cell_samples: List[dict] = []
     ring_iterations = ring_iterations_setting
     if props:
-        num_samples = min(len(props), 5)
-        indices = np.linspace(0, len(props) - 1, num_samples, dtype=int)
         height, width = seg.raw.shape
+        target_labels = [1, 1171, 2336, 3506]
+        label_lookup = {prop.label: prop for prop in props}
 
-        for idx in indices:
-            prop = props[idx]
+        ordered_props: List[measure._regionprops.RegionProperties] = []
+        for label in target_labels:
+            if label in label_lookup:
+                ordered_props.append(label_lookup[label])
+        if len(ordered_props) < 4:
+            for prop in props:
+                if prop not in ordered_props:
+                    ordered_props.append(prop)
+                    if len(ordered_props) == 4:
+                        break
+
+        for prop in ordered_props[:4]:
             label_id = prop.label
             mask = seg.labels == label_id
             if mask.sum() == 0:
@@ -533,10 +543,11 @@ def generate_workflow_figure(
             coords = np.argwhere(mask)
             min_r, min_c = coords.min(axis=0)
             max_r, max_c = coords.max(axis=0) + 1
-            min_r = max(min_r - 4, 0)
-            min_c = max(min_c - 4, 0)
-            max_r = min(max_r + 4, height)
-            max_c = min(max_c + 4, width)
+            margin = 8
+            min_r = max(min_r - margin, 0)
+            min_c = max(min_c - margin, 0)
+            max_r = min(max_r + margin, height)
+            max_c = min(max_c + margin, width)
             slices = np.s_[min_r:max_r, min_c:max_c]
 
             patch_image = seg.raw[slices]
@@ -582,6 +593,7 @@ def generate_workflow_figure(
     ROW1_H = 420
     ROW2_H = 300
     ROW3_H = 300
+    AXES_PAD = 16
 
     row1_y = FIG_H - MARGIN_TOP - ROW1_H
     row2_y = row1_y - ROW_GAP - ROW2_H
@@ -720,8 +732,30 @@ def generate_workflow_figure(
             ax.imshow(img, cmap=cmap)
         ax.axis("off")
         _add_scale_bar(ax, pixel_size_um, seg.raw.shape)
-        ax.set_title(title, fontsize=9, pad=4)
-        ax.text(0.5, -0.18, subtitle, transform=ax.transAxes, fontsize=8, ha="center", va="top")
+        ax.set_title("", fontsize=9)
+        ax.text(
+            0.03,
+            0.97,
+            title,
+            transform=ax.transAxes,
+            fontsize=9,
+            fontweight="bold",
+            ha="left",
+            va="top",
+            color="white" if title.startswith("B6") else "black",
+            bbox={"boxstyle": "round", "facecolor": "black", "alpha": 0.25, "edgecolor": "none"} if title.startswith("B6") else None,
+        )
+        ax.text(
+            0.03,
+            0.82,
+            subtitle,
+            transform=ax.transAxes,
+            fontsize=8,
+            ha="left",
+            va="top",
+            color="white" if title.startswith("B6") else "black",
+            bbox={"boxstyle": "round", "facecolor": "black", "alpha": 0.2, "edgecolor": "none"} if title.startswith("B6") else None,
+        )
 
         cax = add_axes_pixels(slot_x + slot_w_b - cbar_w, slot_y, cbar_w, slot_h_b)
         if norm_bounds is None:
@@ -847,7 +881,8 @@ def generate_workflow_figure(
 
     # Panel E – histogram
     panel_e = dict(x=row3_panels[0]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
-    axE = add_axes_pixels(panel_e["x"], panel_e["y"] + CAPTION, panel_e["w"], panel_e["h"] - CAPTION)
+    inner_height = panel_e["h"] - CAPTION - AXES_PAD
+    axE = add_axes_pixels(panel_e["x"], panel_e["y"] + CAPTION + AXES_PAD / 2, panel_e["w"], inner_height)
     axE.tick_params(labelsize=12)
     if channel_cols:
         for col in non_dapi_channels[:2]:
@@ -856,7 +891,7 @@ def generate_workflow_figure(
             axE.hist(values, bins=30, alpha=0.6, label=label)
         axE.set_xlabel("Mean intensity (a.u.)", fontsize=12)
         axE.set_ylabel("Count", fontsize=12)
-        axE.legend(fontsize=10)
+        axE.legend(loc="upper right", fontsize=10, framealpha=0.6, facecolor="white")
     else:
         axE.text(0.5, 0.5, "No intensity data", ha="center", va="center", fontsize=12)
         axE.set_axis_off()
@@ -865,7 +900,8 @@ def generate_workflow_figure(
 
     # Panel F – cumulative distributions
     panel_f = dict(x=row3_panels[1]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
-    axF_cdf = add_axes_pixels(panel_f["x"], panel_f["y"] + CAPTION, panel_f["w"], panel_f["h"] - CAPTION)
+    inner_height_f = panel_f["h"] - CAPTION - AXES_PAD
+    axF_cdf = add_axes_pixels(panel_f["x"], panel_f["y"] + CAPTION + AXES_PAD / 2, panel_f["w"], inner_height_f)
     axF_cdf.tick_params(labelsize=12)
     if channel_cols:
         for col in non_dapi_channels[:2]:
@@ -878,7 +914,7 @@ def generate_workflow_figure(
         axF_cdf.set_xlabel("Mean intensity (a.u.)", fontsize=12)
         axF_cdf.set_ylabel("Cumulative proportion", fontsize=12)
         axF_cdf.set_ylim(0, 1)
-        axF_cdf.legend(fontsize=10)
+        axF_cdf.legend(loc="lower right", fontsize=10, framealpha=0.6, facecolor="white")
     else:
         axF_cdf.text(0.5, 0.5, "No intensity data", ha="center", va="center", fontsize=12)
         axF_cdf.set_axis_off()
@@ -904,13 +940,14 @@ def generate_workflow_figure(
     # Panel G – scatter
     panel_g = dict(x=row3_panels[2]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
     axG_scatter_width = panel_g["w"] - (cbar_w + cbar_pad)
-    axG_scatter = add_axes_pixels(panel_g["x"], panel_g["y"] + CAPTION, axG_scatter_width, panel_g["h"] - CAPTION)
+    inner_height_g = panel_g["h"] - CAPTION - AXES_PAD
+    axG_scatter = add_axes_pixels(panel_g["x"], panel_g["y"] + CAPTION + AXES_PAD / 2, axG_scatter_width, inner_height_g)
     axG_scatter.tick_params(labelsize=12)
     if xcol is not None and len(x_values) >= 1:
         scatter = axG_scatter.scatter(x_values, y_values, s=15, c=cell_table["area_px"], cmap="viridis", alpha=0.7)
         axG_scatter.set_xlabel(f"Mean {x_label}", fontsize=12)
         axG_scatter.set_ylabel(f"Mean {y_label}", fontsize=12)
-        caxG = add_axes_pixels(panel_g["x"] + axG_scatter_width + cbar_pad, panel_g["y"] + CAPTION, cbar_w, panel_g["h"] - CAPTION)
+        caxG = add_axes_pixels(panel_g["x"] + axG_scatter_width + cbar_pad, panel_g["y"] + CAPTION + AXES_PAD / 2, cbar_w, inner_height_g)
         cb = fig.colorbar(scatter, cax=caxG)
         cb.ax.set_ylabel("Cell area (px)", fontsize=11)
         cb.ax.tick_params(labelsize=10)
@@ -922,7 +959,8 @@ def generate_workflow_figure(
 
     # Panel H – density plot
     panel_h = dict(x=row3_panels[3]["x"], y=row3_y, w=row3_panel_w, h=ROW3_H)
-    axH = add_axes_pixels(panel_h["x"], panel_h["y"] + CAPTION, panel_h["w"], panel_h["h"] - CAPTION)
+    inner_height_h = panel_h["h"] - CAPTION - AXES_PAD
+    axH = add_axes_pixels(panel_h["x"], panel_h["y"] + CAPTION + AXES_PAD / 2, panel_h["w"], inner_height_h)
     axH.tick_params(labelsize=12)
     if xcol is not None and len(x_values) >= 10:
         hb = axH.hexbin(
@@ -937,7 +975,7 @@ def generate_workflow_figure(
         axH.set_facecolor("#0a0a0a")
         axH.set_xlabel(f"Mean {x_label}", fontsize=12)
         axH.set_ylabel(f"Mean {y_label}", fontsize=12)
-        caxH = add_axes_pixels(panel_h["x"] + panel_h["w"] - cbar_w, panel_h["y"] + CAPTION, cbar_w, panel_h["h"] - CAPTION)
+        caxH = add_axes_pixels(panel_h["x"] + panel_h["w"] - cbar_w, panel_h["y"] + CAPTION + AXES_PAD / 2, cbar_w, inner_height_h)
         cb = fig.colorbar(hb, cax=caxH)
         cb.ax.set_ylabel("Cell count (log)", fontsize=11)
         cb.ax.tick_params(labelsize=10)
