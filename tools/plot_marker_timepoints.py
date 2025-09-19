@@ -25,8 +25,8 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         "--timepoint",
         dest="timepoints",
         action="append",
-        default=["DIV 18", "DIV 23"],
-        help="Timepoint identifier substring (can be repeated). Default: DIV 18, DIV 23",
+        default=None,
+        help="Timepoint identifier substring (repeat flag for multiples). Default: DIV 18, DIV 23",
     )
     parser.add_argument(
         "--alias",
@@ -124,7 +124,10 @@ def main(argv: List[str] | None = None) -> int:
     override_aliases = _resolve_alias_overrides(args.alias)
     alias_table = build_alias_table({**project_aliases, **override_aliases})
 
-    timepoints_config = args.timepoints or []
+    if args.timepoints:
+        timepoints_config = list(dict.fromkeys(args.timepoints))
+    else:
+        timepoints_config = ["DIV 18", "DIV 23"]
     timepoints_lower = [tp.lower() for tp in timepoints_config]
     skip_tokens = [tok.lower() for tok in (args.skip_token or [])]
 
