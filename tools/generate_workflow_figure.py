@@ -41,6 +41,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default="cells",
         help="Subdirectory under the project root for the per-cell CSV (default: cells)",
     )
+    parser.add_argument(
+        "--alias",
+        action="append",
+        default=[],
+        metavar="TOKEN=LABEL",
+        help="Override channel alias mapping (e.g. --alias cy5=SOX2)",
+    )
 
     seg_group = parser.add_argument_group("Segmentation overrides")
     seg_group.add_argument(
@@ -124,6 +131,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.close_radius is not None:
         seg_params["close_radius"] = args.close_radius
 
+    alias_overrides: dict[str, str] = {}
+    for item in args.alias:
+        if "=" not in item:
+            print(f"Warning: ignoring alias '{item}' (expected TOKEN=LABEL)", file=sys.stderr)
+            continue
+        token, label = item.split("=", 1)
+        alias_overrides[token.strip().lower()] = label.strip()
+
     figure_path = generate_workflow_figure(
         nd2_path,
         project_root=args.project_root,
@@ -131,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         cells_subdir=args.cells_subdir,
         figure_name=args.figure_name,
         segmentation_settings=seg_params or None,
+        channel_aliases=alias_overrides or None,
     )
 
     print(f"Workflow figure written to: {figure_path}")

@@ -27,6 +27,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Destination directory for figures (default: <nd2_dir>/panel_a)",
     )
+    parser.add_argument(
+        "--alias",
+        action="append",
+        default=[],
+        metavar="TOKEN=LABEL",
+        help="Override channel alias (e.g. --alias cy5=SOX2)"
+    )
     return parser.parse_args(argv)
 
 
@@ -66,6 +73,14 @@ def main(argv: list[str] | None = None) -> int:
         print("No ND2 files selected after applying limit", file=sys.stderr)
         return 1
 
+    alias_overrides: dict[str, str] = {}
+    for item in args.alias:
+        if "=" not in item:
+            print(f"Warning: ignoring alias '{item}' (expected TOKEN=LABEL)", file=sys.stderr)
+            continue
+        token, label = item.split("=", 1)
+        alias_overrides[token.strip().lower()] = label.strip()
+
     completed = 0
     attempt = 0
     for nd2_path in nd2_files:
@@ -76,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             figure_path = generate_panel_a_figure(
                 nd2_path,
                 output_dir=args.output_dir,
+                channel_aliases=alias_overrides or None,
             )
         except Exception as exc:  # pragma: no cover - runtime reporting only
             print(

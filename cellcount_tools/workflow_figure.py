@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Mapping, Tuple
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -95,16 +95,31 @@ def _normalise_for_display(img: np.ndarray, *, lower_percentile: float = 1.0, up
     return np.clip(scaled, 0.0, 1.0).astype(np.float32)
 
 
-_CHANNEL_ALIAS_DEFS: Dict[str, Tuple[str, str]] = {
-    "cy5": ("SOX2", "SOX2 (Cy5)"),
-    "gfp": ("LHX6", "LHX6 (GFP)"),
+_DEFAULT_CHANNEL_ALIASES: Dict[str, Tuple[str, str]] = {
     "dapi": ("DAPI", "DAPI"),
+    "cy5": ("SOX2", "SOX2 (Cy5)"),
+    "sox2": ("SOX2", "SOX2"),
+    "dcx": ("DCX", "DCX (Cy5)"),
+    "gfp": ("LHX6", "LHX6 (GFP)"),
+    "lhx6": ("LHX6", "LHX6"),
+    "488": ("LHX6", "LHX6 (488)"),
+    "647": ("SOX2", "SOX2 (647)"),
 }
 
 
-def _channel_alias(name: str) -> Tuple[str, str]:
+def build_alias_table(overrides: Mapping[str, str] | None = None) -> Dict[str, Tuple[str, str]]:
+    table = dict(_DEFAULT_CHANNEL_ALIASES)
+    if overrides:
+        for key, label in overrides.items():
+            key_lower = key.lower()
+            clean_label = label.strip()
+            table[key_lower] = (clean_label, clean_label)
+    return table
+
+
+def _channel_alias(name: str, alias_table: Mapping[str, Tuple[str, str]]) -> Tuple[str, str]:
     lowered = name.lower()
-    for key, (short, long) in _CHANNEL_ALIAS_DEFS.items():
+    for key, (short, long) in alias_table.items():
         if key in lowered:
             return short, long
     return name, name
@@ -356,6 +371,7 @@ def generate_workflow_figure(
     cells_subdir: str = "cells",
     figure_name: str | None = None,
     segmentation_settings: Dict[str, float] | None = None,
+    channel_aliases: Mapping[str, str] | None = None,
 ) -> Path:
     """Create the workflow illustration and persist artefacts inside a project folder.
 
@@ -374,6 +390,9 @@ def generate_workflow_figure(
         ``<nd2_stem>_workflow.png``.
     segmentation_settings:
         Optional overrides for the DAPI segmentation routine (e.g. ``{"otsu_offset": 0.05}``).
+    channel_aliases:
+        Optional mapping from channel tokens (e.g. "cy5", "gfp") to biological marker
+        names. These augment the default aliases ``Cy5→SOX2`` and ``GFP→LHX6``.
     """
 
     nd2_path = Path(nd2_path).expanduser().resolve()
@@ -395,13 +414,14 @@ def generate_workflow_figure(
     channel_images = OrderedDict(
         (name, _normalise_for_display(projection[idx])) for idx, name in enumerate(channel_names)
     )
+    alias_table = build_alias_table(channel_aliases)
     panel_channels = _panel_channel_sequence(channel_names)
 
     short_aliases: Dict[str, str] = {}
     long_aliases: Dict[str, str] = {}
     seen_shorts: set[str] = set()
     for name in channel_names:
-        short, long = _channel_alias(name)
+        short, long = _channel_alias(name, alias_table)
         if short in seen_shorts:
             short, long = name, name
         seen_shorts.add(short)
