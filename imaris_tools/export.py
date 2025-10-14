@@ -55,7 +55,11 @@ def export_directory(
                 composite_dtype=composite_dtype,
             )
         except Exception as exc:
-            raise RuntimeError(f"Failed to process {ims_path}: {exc}") from exc
+            import traceback
+            traceback_lines = "".join(traceback.format_exception(exc))
+            raise RuntimeError(
+                f"Failed to process {ims_path}: {exc}\n{traceback_lines}"
+            ) from exc
 
         per_file_dir = output_dir / ims_path.stem
         if per_file_dir.exists() and overwrite:

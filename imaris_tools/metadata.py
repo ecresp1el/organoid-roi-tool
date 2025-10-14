@@ -257,7 +257,8 @@ def _discover_channels(
     if group_path not in handle:
         return
     time_group = handle[group_path]
-    for key in time_group:
+    for raw_key in time_group:
+        key = raw_key.decode("utf-8", errors="ignore") if isinstance(raw_key, bytes) else str(raw_key)
         if not key.lower().startswith("channel"):
             continue
         parts = key.split()
@@ -265,11 +266,12 @@ def _discover_channels(
             index = int(parts[-1])
         except (IndexError, ValueError):
             continue
-        channel_group = time_group.get(key)
-        if channel_group is None or not isinstance(channel_group, h5py.Group):
+        dataset_path = f"{group_path}/{key}/Data"
+        try:
+            dataset = handle[dataset_path]
+        except KeyError:
             continue
-        dataset = channel_group.get("Data")
-        if dataset is None or not isinstance(dataset, h5py.Dataset):
+        if not isinstance(dataset, h5py.Dataset):
             continue
         yield index, dataset
 
