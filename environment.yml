@@ -8,6 +8,7 @@ dependencies:
   - imagecodecs>=2024.1
   - pillow>=10.3
   - h5py>=3.10
+  - matplotlib>=3.8
   - pip:
       - napari>=0.4.19
       - PySide6>=6.6

@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from imaris_tools import export_directory
+from imaris_tools import export_directory, plot_folder_projection_grid
 
 PROJECT_DEFAULT = Path("/Users/ecrespo/Desktop/nestin_dcx_pcdh19_kovswt")
 OUTPUT_FOLDER_NAME = "pre_processed_files"
@@ -51,6 +51,23 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "Allow replacing existing per-file export folders if they already exist. "
             "Only affects generated outputs; raw project data is never removed."
         ),
+    )
+    parser.add_argument(
+        "--skip-grid",
+        action="store_true",
+        help="Skip generation of the per-channel grid PDF.",
+    )
+    parser.add_argument(
+        "--grid-percentile",
+        type=float,
+        default=95.0,
+        help="Percentile used to scale the colour mapping in the grid PDF (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--grid-dpi",
+        type=int,
+        default=150,
+        help="DPI for the generated PDF when plotting the grid (default: %(default)s).",
     )
     return parser.parse_args(argv)
 
@@ -92,6 +109,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     print(f"[info] Metadata CSV written to: {csv_path}")
+
+    if not args.skip_grid:
+        grid_path = output_root / "channel_overview.pdf"
+        try:
+            plot_folder_projection_grid(
+                project_folder,
+                grid_path,
+                pattern="*.ims",
+                recursive=args.recursive,
+                percentile=args.grid_percentile,
+                dpi=args.grid_dpi,
+            )
+            print(f"[info] Grid PDF written to: {grid_path}")
+        except Exception as exc:  # pragma: no cover
+            print(f"[error] failed to generate grid PDF: {exc}", file=sys.stderr)
+
     print("[done] Preprocessing completed successfully.")
     return 0
 

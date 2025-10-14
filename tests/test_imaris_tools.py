@@ -1,5 +1,6 @@
 import csv
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,7 @@ from imaris_tools import (
     compute_max_projections,
     colorize_projection,
     export_directory,
+    plot_folder_projection_grid,
     process_directory,
     process_file,
     read_metadata,
@@ -186,3 +188,15 @@ def test_export_directory_writes_outputs(tmp_path: Path) -> None:
 
     colorized = tiff.imread(colorized_path)
     assert colorized.shape[-1] == 3
+
+
+def test_plot_folder_projection_grid(tmp_path: Path, ims_file: Path) -> None:
+    folder = tmp_path / "grid_inputs"
+    folder.mkdir()
+    target = folder / ims_file.name
+    shutil.copy2(ims_file, target)
+
+    pdf_path = tmp_path / "grid.pdf"
+    result_path = plot_folder_projection_grid(folder, pdf_path, percentile=90.0, dpi=50)
+    assert result_path.exists()
+    assert result_path.stat().st_size > 0

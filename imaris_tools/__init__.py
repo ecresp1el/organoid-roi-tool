@@ -28,6 +28,7 @@ from .projections import (
     process_directory,
     process_file,
 )
+from .plotting import plot_folder_projection_grid
 from .export import export_directory
 
 __all__ = [
@@ -41,4 +42,5 @@ __all__ = [
     "process_directory",
     "colorize_projection",
     "export_directory",
+    "plot_folder_projection_grid",
 ]
