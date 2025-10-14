@@ -47,12 +47,15 @@ def export_directory(
 
     rows: List[Dict[str, object]] = []
     for ims_path in _iter_ims_files(base_dir, pattern=pattern, recursive=recursive):
-        result = process_file(
-            ims_path,
-            resolution_level=resolution_level,
-            time_point=time_point,
-            composite_dtype=composite_dtype,
-        )
+        try:
+            result = process_file(
+                ims_path,
+                resolution_level=resolution_level,
+                time_point=time_point,
+                composite_dtype=composite_dtype,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Failed to process {ims_path}: {exc}") from exc
 
         per_file_dir = output_dir / ims_path.stem
         if per_file_dir.exists() and overwrite:

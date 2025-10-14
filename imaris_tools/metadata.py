@@ -257,7 +257,7 @@ def _discover_channels(
     if group_path not in handle:
         return
     time_group = handle[group_path]
-    for key, value in time_group.items():
+    for key in time_group:
         if not key.lower().startswith("channel"):
             continue
         parts = key.split()
@@ -265,8 +265,13 @@ def _discover_channels(
             index = int(parts[-1])
         except (IndexError, ValueError):
             continue
-        if "Data" in value:
-            yield index, value["Data"]
+        channel_group = time_group.get(key)
+        if channel_group is None or not isinstance(channel_group, h5py.Group):
+            continue
+        dataset = channel_group.get("Data")
+        if dataset is None or not isinstance(dataset, h5py.Dataset):
+            continue
+        yield index, dataset
 
 
 def _discover_time_point_count(handle: h5py.File, *, resolution_level: int = 0) -> int:
