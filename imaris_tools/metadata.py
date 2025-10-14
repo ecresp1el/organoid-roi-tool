@@ -35,6 +35,7 @@ class ImarisMetadata:
     voxel_size_um: Optional[Tuple[float, float, float]]
     time_delta_s: Optional[float]
     channels: Tuple[ImarisChannelMetadata, ...]
+    channel_shapes: Dict[int, Tuple[int, ...]]
     raw_xml: Optional[str] = None
 
 
@@ -45,6 +46,7 @@ class ImarisProjectionResult:
     source_path: Path
     metadata: ImarisMetadata
     channel_projections: Dict[str, np.ndarray]
+    channel_names: Dict[int, str]
     composite_rgb: np.ndarray
 
 
@@ -89,6 +91,7 @@ def _read_metadata_from_handle(
     channel_datasets = list(
         _discover_channels(handle, resolution_level=resolution_level, time_point=time_point)
     )
+    channel_shapes = {index: tuple(dataset.shape) for index, dataset in channel_datasets}
     channel_indices = [index for index, _ in channel_datasets]
     channel_indices.sort()
 
@@ -127,6 +130,7 @@ def _read_metadata_from_handle(
         voxel_size_um=voxel_size,
         time_delta_s=time_delta,
         channels=tuple(channels),
+        channel_shapes=channel_shapes,
         raw_xml=raw_xml,
     )
 
@@ -346,9 +350,15 @@ def _normalize_color_component(text: Optional[str]) -> Optional[float]:
     return value
 
 
+def default_channel_color(index: int) -> Tuple[float, float, float]:
+    """Return the fallback RGB colour for ``index``."""
+    return _default_color_for_index(index)
+
+
 __all__ = [
     "ImarisChannelMetadata",
     "ImarisMetadata",
     "ImarisProjectionResult",
     "read_metadata",
+    "default_channel_color",
 ]

@@ -59,6 +59,7 @@ def process_file(
     )
 
     channel_images: Dict[str, np.ndarray] = OrderedDict()
+    channel_names: Dict[int, str] = {}
     used_names: Dict[str, int] = {}
     for channel in sorted(metadata.channels, key=lambda c: c.index):
         array = projections_by_index.get(channel.index)
@@ -66,6 +67,7 @@ def process_file(
             continue
         name = _ensure_unique_name(channel.name, used_names)
         channel_images[name] = array
+        channel_names[channel.index] = name
 
     # Include channels that were not described in the XML metadata.
     if len(channel_images) < len(projections_by_index):
@@ -75,6 +77,7 @@ def process_file(
         for idx in sorted(missing_indices):
             name = _ensure_unique_name(f"Channel {idx}", used_names)
             channel_images[name] = projections_by_index[idx]
+            channel_names[idx] = name
 
     composite = _compose_rgb(
         projections_by_index,
@@ -86,6 +89,7 @@ def process_file(
         source_path=Path(path),
         metadata=metadata,
         channel_projections=channel_images,
+        channel_names=channel_names,
         composite_rgb=composite,
     )
 
@@ -201,6 +205,17 @@ def _finalize_rgb(composite: np.ndarray, *, dtype: Union[np.dtype, type]) -> np.
     return composite.astype(target_dtype)
 
 
+def colorize_projection(
+    array: np.ndarray,
+    color_rgb: Tuple[float, float, float],
+    *,
+    dtype: Union[np.dtype, type] = np.uint16,
+) -> np.ndarray:
+    """Return a colourized RGB view of ``array`` using ``color_rgb`` weights."""
+    rgb = _projection_to_rgb(array, color_rgb)
+    return _finalize_rgb(rgb, dtype=dtype)
+
+
 def _ensure_unique_name(name: str, used: Dict[str, int]) -> str:
     base = name or "Channel"
     count = used.get(base, 0)
@@ -214,4 +229,5 @@ __all__ = [
     "compute_max_projections",
     "process_file",
     "process_directory",
+    "colorize_projection",
 ]

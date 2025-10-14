@@ -1,11 +1,16 @@
+import csv
+import json
 from pathlib import Path
 
 import numpy as np
 import h5py  # type: ignore
 import pytest
+import tifffile as tiff  # type: ignore
 
 from imaris_tools import (
     compute_max_projections,
+    colorize_projection,
+    export_directory,
     process_directory,
     process_file,
     read_metadata,
@@ -105,6 +110,7 @@ def test_read_metadata_extracts_channel_info(ims_file: Path) -> None:
     assert metadata.name == "Mock Imaris Volume"
     assert metadata.voxel_size_um == (0.5, 0.6, 1.0)
     assert metadata.dimensions_xyzct == (2, 2, 2, 3, 1)
+    assert metadata.channel_shapes[0] == (2, 2, 2)
 
     channel_names = [channel.name for channel in metadata.channels]
     assert channel_names == ["DNA", "Membrane", "Marker"]
@@ -125,6 +131,7 @@ def test_process_file_generates_rgb_composite(ims_file: Path) -> None:
     composite = result.composite_rgb
 
     assert composite.shape == (2, 2, 3)
+    assert result.channel_names == {0: "DNA", 1: "Membrane", 2: "Marker"}
     # Each channel should map entirely to its colour.
     red_channel = composite[..., 0]
     green_channel = composite[..., 1]
@@ -153,3 +160,47 @@ def test_process_directory_handles_multiple_files(tmp_path: Path, ims_file: Path
     assert len(results) == 2
     for result in results:
         assert result.composite_rgb.shape == (2, 2, 3)
+
+
+def test_colorize_projection_respects_dtype() -> None:
+    array = np.array([[0, 10], [20, 30]], dtype=np.uint16)
+    rgb = colorize_projection(array, (0.2, 0.6, 0.9), dtype=np.uint8)
+    assert rgb.shape == (2, 2, 3)
+    assert rgb.dtype == np.uint8
+    assert rgb[..., 2].max() > 0
+
+
+def test_export_directory_writes_outputs(tmp_path: Path) -> None:
+    ims_dir = tmp_path / "ims"
+    ims_dir.mkdir()
+    first = ims_dir / "first.ims"
+    second = ims_dir / "second.ims"
+    _create_mock_ims(first)
+    _create_mock_ims(second)
+
+    output_root = tmp_path / "exports"
+    csv_path = export_directory(ims_dir, output_root=output_root)
+    assert csv_path.exists()
+
+    with csv_path.open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert len(rows) == 6  # 3 channels per file
+    sample_row = rows[0]
+
+    projection_path = Path(sample_row["projection_path"])
+    colorized_path = Path(sample_row["colorized_path"])
+    composite_path = Path(sample_row["composite_path"])
+    metadata_json_path = Path(sample_row["metadata_json_path"])
+
+    assert projection_path.exists()
+    assert colorized_path.exists()
+    assert composite_path.exists()
+    assert metadata_json_path.exists()
+
+    metadata_payload = json.loads(metadata_json_path.read_text())
+    assert metadata_payload["channels"]
+    assert metadata_payload["channels"][0]["unique_name"]
+
+    colorized = tiff.imread(colorized_path)
+    assert colorized.shape[-1] == 3
