@@ -61,7 +61,7 @@ def _create_mock_ims(path: Path) -> None:
     """.strip()
 
     with h5py.File(path, "w") as handle:
-        handle.create_dataset("DataSetInfo", data=np.string_(xml))
+        handle.create_dataset("DataSetInfo", data=np.array(xml.encode("utf-8"), dtype="S"))
         dataset_group = handle.create_group("DataSet/ResolutionLevel 0/TimePoint 0")
 
         channel_data = {
