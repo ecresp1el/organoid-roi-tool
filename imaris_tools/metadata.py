@@ -3,7 +3,7 @@ from __future__ import annotations
 import gzip
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -84,9 +84,16 @@ def _read_metadata_from_handle(
     resolution_level: int,
     time_point: int,
 ) -> ImarisMetadata:
+    dataset_info_group = _get_dataset_info_group(handle)
+    group_info = _parse_dataset_info_group(dataset_info_group)
     raw_xml = _read_dataset_info_xml(handle)
     xml_root = ET.fromstring(raw_xml) if raw_xml else None
-    channel_entries = _parse_channels(xml_root) if xml_root is not None else {}
+    channel_entries: Dict[int, ImarisChannelMetadata] = {}
+    if xml_root is not None:
+        channel_entries.update(_parse_channels_from_xml(xml_root))
+    if dataset_info_group is not None:
+        for idx, meta in _parse_channels_from_group(dataset_info_group).items():
+            channel_entries.setdefault(idx, meta)
 
     channel_datasets = list(
         _discover_channels(handle, resolution_level=resolution_level, time_point=time_point)
@@ -112,11 +119,23 @@ def _read_metadata_from_handle(
         channel_count=len(channel_datasets) or len(channel_entries),
         time_points=_discover_time_point_count(handle, resolution_level=resolution_level),
     )
-    voxel_size = _infer_voxel_size(xml_root, dimensions)
+    voxel_size = _infer_voxel_size(
+        xml_root,
+        dimensions,
+        fallback_extent_min=group_info.get("extent_min"),
+        fallback_extent_max=group_info.get("extent_max"),
+        fallback_voxel=group_info.get("voxel_size"),
+    )
     time_delta = _infer_time_delta(xml_root)
+    if time_delta is None:
+        time_delta = group_info.get("time_delta")
 
     name = xml_root.findtext(".//Image/Name") if xml_root is not None else None
     description = xml_root.findtext(".//Image/Description") if xml_root is not None else None
+    if not name:
+        name = group_info.get("name")
+    if not description:
+        description = group_info.get("description")
 
     if not channels and channel_entries:
         # Include metadata-only channels to avoid losing information.
@@ -138,7 +157,10 @@ def _read_metadata_from_handle(
 def _read_dataset_info_xml(handle: h5py.File) -> Optional[str]:
     if "DataSetInfo" not in handle:
         return None
-    dataset = handle["DataSetInfo"]
+    node = handle["DataSetInfo"]
+    if isinstance(node, h5py.Group):
+        return None
+    dataset = node
     raw = dataset[()]
     if isinstance(raw, np.ndarray):
         raw = raw.tobytes()
@@ -154,7 +176,7 @@ def _read_dataset_info_xml(handle: h5py.File) -> Optional[str]:
         return data.decode("latin-1", errors="ignore")
 
 
-def _parse_channels(root: Optional[ET.Element]) -> Dict[int, ImarisChannelMetadata]:
+def _parse_channels_from_xml(root: Optional[ET.Element]) -> Dict[int, ImarisChannelMetadata]:
     if root is None:
         return {}
     channels: Dict[int, ImarisChannelMetadata] = {}
@@ -176,6 +198,47 @@ def _parse_channels(root: Optional[ET.Element]) -> Dict[int, ImarisChannelMetada
             excitation_wavelength_nm=_parse_float(node.findtext("ExcitationWavelength")),
             emission_wavelength_nm=_parse_float(node.findtext("EmissionWavelength")),
             detection_wavelength_nm=_parse_float(node.findtext("DetectionWavelength")),
+        )
+    return channels
+
+
+def _parse_channels_from_group(group: Optional[h5py.Group]) -> Dict[int, ImarisChannelMetadata]:
+    if group is None:
+        return {}
+    channels: Dict[int, ImarisChannelMetadata] = {}
+    for raw_key, node in group.items():
+        key = raw_key.decode("utf-8", errors="ignore") if isinstance(raw_key, bytes) else str(raw_key)
+        if not key.lower().startswith("channel"):
+            continue
+        index = _parse_int(key.split()[-1])
+        if index is None or not isinstance(node, h5py.Group):
+            continue
+        attrs = node.attrs
+        name = _decode_ascii_attr(attrs.get("Name")) or f"Channel {index}"
+        color_text = _decode_ascii_attr(attrs.get("Color"))
+        if color_text:
+            color = _parse_color_string(color_text, fallback_index=index)
+        else:
+            color = _default_color_for_index(index)
+        excitation = _first_float_attr(
+            attrs,
+            ("ExcitationWavelength", "LSMExcitationWavelength", "ChannelExcitationWavelength"),
+        )
+        emission = _first_float_attr(
+            attrs,
+            ("EmissionWavelength", "LSMEmissionWavelength", "ChannelEmissionWavelength"),
+        )
+        detection = _first_float_attr(
+            attrs,
+            ("DetectionWavelength", "ChannelDetectionWavelength"),
+        )
+        channels[index] = ImarisChannelMetadata(
+            index=index,
+            name=name,
+            color_rgb=color,
+            excitation_wavelength_nm=excitation,
+            emission_wavelength_nm=emission,
+            detection_wavelength_nm=detection,
         )
     return channels
 
@@ -210,8 +273,15 @@ def _infer_dimensions(
 def _infer_voxel_size(
     xml_root: Optional[ET.Element],
     dimensions_xyzct: Tuple[int, int, int, int, int],
+    fallback_extent_min: Optional[Tuple[float, float, float]] = None,
+    fallback_extent_max: Optional[Tuple[float, float, float]] = None,
+    fallback_voxel: Optional[Tuple[float, float, float]] = None,
 ) -> Optional[Tuple[float, float, float]]:
     if xml_root is None:
+        if fallback_voxel is not None:
+            return tuple(float(v) for v in fallback_voxel)
+        if fallback_extent_min and fallback_extent_max:
+            return _compute_spacing(fallback_extent_min, fallback_extent_max, dimensions_xyzct)
         return None
 
     voxel = (
@@ -224,13 +294,13 @@ def _infer_voxel_size(
 
     extent_min = _parse_vector3(xml_root.findtext(".//Image/ExtMin") or "")
     extent_max = _parse_vector3(xml_root.findtext(".//Image/ExtMax") or "")
-    x, y, z, _, _ = dimensions_xyzct
-    if extent_min and extent_max and x > 1 and y > 1 and z > 1:
-        spacing = tuple(
-            (max_val - min_val) / float(size - 1)
-            for (min_val, max_val, size) in zip(extent_min, extent_max, (x, y, z))
-        )
-        return spacing  # type: ignore[return-value]
+    if extent_min and extent_max:
+        return _compute_spacing(extent_min, extent_max, dimensions_xyzct)
+
+    if fallback_voxel is not None:
+        return tuple(float(v) for v in fallback_voxel)
+    if fallback_extent_min and fallback_extent_max:
+        return _compute_spacing(fallback_extent_min, fallback_extent_max, dimensions_xyzct)
     return None
 
 
@@ -295,6 +365,69 @@ def _discover_time_point_count(handle: h5py.File, *, resolution_level: int = 0) 
     return max(time_indices) + 1
 
 
+def _get_dataset_info_group(handle: h5py.File) -> Optional[h5py.Group]:
+    node = handle.get("DataSetInfo")
+    if isinstance(node, h5py.Group):
+        return node
+    return None
+
+
+def _parse_dataset_info_group(group: Optional[h5py.Group]) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "name": None,
+        "description": None,
+        "extent_min": None,
+        "extent_max": None,
+        "voxel_size": None,
+        "time_delta": None,
+    }
+    if group is None:
+        return info
+
+    image_group = group.get("Image")
+    if isinstance(image_group, h5py.Group):
+        name = _decode_ascii_attr(image_group.attrs.get("Name"))
+        if name:
+            info["name"] = name
+        description = _decode_ascii_attr(image_group.attrs.get("Description"))
+        if description:
+            info["description"] = description
+
+        extent_min = [
+            _parse_float(_decode_ascii_attr(image_group.attrs.get(f"ExtMin{axis}")))
+            for axis in range(3)
+        ]
+        extent_max = [
+            _parse_float(_decode_ascii_attr(image_group.attrs.get(f"ExtMax{axis}")))
+            for axis in range(3)
+        ]
+        if all(value is not None for value in extent_min):
+            info["extent_min"] = tuple(float(value) for value in extent_min)  # type: ignore[assignment]
+        if all(value is not None for value in extent_max):
+            info["extent_max"] = tuple(float(value) for value in extent_max)  # type: ignore[assignment]
+
+        voxel_candidate_sets = [
+            ("VoxelSizeX", "VoxelSizeY", "VoxelSizeZ"),
+            ("VoxelSize0", "VoxelSize1", "VoxelSize2"),
+            ("VoxelSizeXUm", "VoxelSizeYUm", "VoxelSizeZUm"),
+        ]
+        for keys in voxel_candidate_sets:
+            voxel_values = [_parse_float(_decode_ascii_attr(image_group.attrs.get(key))) for key in keys]
+            if all(value is not None for value in voxel_values):
+                info["voxel_size"] = tuple(float(value) for value in voxel_values)  # type: ignore[assignment]
+                break
+
+    time_group = group.get("TimeInfo")
+    if isinstance(time_group, h5py.Group):
+        for key in ("TimeInterval", "DeltaT", "TimeIncrement", "TimePointInterval"):
+            value = _parse_float(_decode_ascii_attr(time_group.attrs.get(key)))
+            if value is not None:
+                info["time_delta"] = value
+                break
+
+    return info
+
+
 def _parse_int(value: Optional[Union[str, int]]) -> Optional[int]:
     if value is None:
         return None
@@ -317,6 +450,67 @@ def _clip_unit_float(value: Optional[float]) -> float:
     if value is None:
         return 0.0
     return float(min(1.0, max(0.0, value)))
+
+
+def _decode_ascii_attr(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8", errors="ignore").strip().strip("\x00")
+    if isinstance(value, str):
+        return value.strip().strip("\x00")
+    try:
+        arr = np.asarray(value)
+    except Exception:
+        return str(value).strip()
+    if arr.dtype.kind in ("S", "a"):
+        text = arr.tobytes().decode("utf-8", errors="ignore")
+        return text.strip().strip("\x00")
+    if arr.dtype.kind == "U":
+        return "".join(arr.tolist()).strip().strip("\x00")
+    if arr.dtype.kind in ("i", "f"):
+        if arr.ndim == 0:
+            return str(arr.item())
+        return " ".join(str(x) for x in arr.flat)
+    return str(value).strip()
+
+
+def _parse_color_string(text: str, *, fallback_index: int) -> Tuple[float, float, float]:
+    components: List[float] = []
+    for token in text.replace(",", " ").split():
+        component = _normalize_color_component(token)
+        if component is None:
+            continue
+        components.append(_clip_unit_float(component))
+        if len(components) == 3:
+            break
+    if len(components) < 3:
+        return _default_color_for_index(fallback_index)
+    return (components[0], components[1], components[2])
+
+
+def _first_float_attr(attrs: h5py.AttributeManager, keys: Tuple[str, ...]) -> Optional[float]:
+    for key in keys:
+        if key in attrs:
+            value = _parse_float(_decode_ascii_attr(attrs.get(key)))
+            if value is not None:
+                return value
+    return None
+
+
+def _compute_spacing(
+    extent_min: Tuple[float, float, float],
+    extent_max: Tuple[float, float, float],
+    dimensions_xyzct: Tuple[int, int, int, int, int],
+) -> Tuple[float, float, float]:
+    x, y, z, _, _ = dimensions_xyzct
+    spacing: List[float] = []
+    for axis_len, min_val, max_val in zip((x, y, z), extent_min, extent_max):
+        if axis_len <= 1:
+            spacing.append(0.0)
+        else:
+            spacing.append((max_val - min_val) / float(axis_len - 1))
+    return (spacing[0], spacing[1], spacing[2])
 
 
 def _default_color_for_index(index: int) -> Tuple[float, float, float]:

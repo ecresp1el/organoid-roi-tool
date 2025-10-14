@@ -18,55 +18,7 @@ from imaris_tools import (
 
 
 def _create_mock_ims(path: Path) -> None:
-    xml = """
-    <DataSetInfo>
-        <Image>
-            <Name>Mock Imaris Volume</Name>
-            <Description>Synthetic test data</Description>
-            <Dimensions>
-                <X>2</X>
-                <Y>2</Y>
-                <Z>2</Z>
-                <C>3</C>
-                <T>1</T>
-            </Dimensions>
-            <VoxelSize>
-                <X>0.5</X>
-                <Y>0.6</Y>
-                <Z>1.0</Z>
-            </VoxelSize>
-        </Image>
-        <Channels>
-            <Channel Id="0">
-                <Name>DNA</Name>
-                <Color>
-                    <Red>1</Red>
-                    <Green>0</Green>
-                    <Blue>0</Blue>
-                </Color>
-            </Channel>
-            <Channel Id="1">
-                <Name>Membrane</Name>
-                <Color>
-                    <Red>0</Red>
-                    <Green>1</Green>
-                    <Blue>0</Blue>
-                </Color>
-            </Channel>
-            <Channel Id="2">
-                <Name>Marker</Name>
-                <Color>
-                    <Red>0</Red>
-                    <Green>0</Green>
-                    <Blue>1</Blue>
-                </Color>
-            </Channel>
-        </Channels>
-    </DataSetInfo>
-    """.strip()
-
     with h5py.File(path, "w") as handle:
-        handle.create_dataset("DataSetInfo", data=np.array(xml.encode("utf-8"), dtype="S"))
         dataset_group = handle.create_group("DataSet/ResolutionLevel 0/TimePoint 0")
 
         channel_data = {
@@ -96,6 +48,36 @@ def _create_mock_ims(path: Path) -> None:
         for idx, data in channel_data.items():
             channel_group = dataset_group.create_group(f"Channel {idx}")
             channel_group.create_dataset("Data", data=data)
+
+        dataset_info = handle.create_group("DataSetInfo")
+        image_group = dataset_info.create_group("Image")
+        image_group.attrs["Name"] = np.array("Mock Imaris Volume", dtype="S")
+        image_group.attrs["Description"] = np.array("Synthetic test data", dtype="S")
+        image_group.attrs["VoxelSizeX"] = np.array("0.5", dtype="S")
+        image_group.attrs["VoxelSizeY"] = np.array("0.6", dtype="S")
+        image_group.attrs["VoxelSizeZ"] = np.array("1.0", dtype="S")
+        image_group.attrs["ExtMin0"] = np.array("0.0", dtype="S")
+        image_group.attrs["ExtMin1"] = np.array("0.0", dtype="S")
+        image_group.attrs["ExtMin2"] = np.array("0.0", dtype="S")
+        image_group.attrs["ExtMax0"] = np.array("0.5", dtype="S")
+        image_group.attrs["ExtMax1"] = np.array("0.6", dtype="S")
+        image_group.attrs["ExtMax2"] = np.array("1.0", dtype="S")
+
+        time_group = dataset_info.create_group("TimeInfo")
+        time_group.attrs["TimeInterval"] = np.array("1.0", dtype="S")
+
+        channel_descriptors = {
+            0: ("DNA", "1 0 0", "488", "520"),
+            1: ("Membrane", "0 1 0", "561", "605"),
+            2: ("Marker", "0 0 1", "647", "680"),
+        }
+
+        for index, (name, color, excitation, emission) in channel_descriptors.items():
+            info_group = dataset_info.create_group(f"Channel {index}")
+            info_group.attrs["Name"] = np.array(name, dtype="S")
+            info_group.attrs["Color"] = np.array(color, dtype="S")
+            info_group.attrs["LSMExcitationWavelength"] = np.array(excitation, dtype="S")
+            info_group.attrs["LSMEmissionWavelength"] = np.array(emission, dtype="S")
 
 
 @pytest.fixture()
