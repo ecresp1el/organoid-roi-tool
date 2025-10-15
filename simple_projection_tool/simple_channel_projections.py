@@ -1,10 +1,72 @@
 """
-Batch export of raw max/mean/median projections for Imaris ``.ims`` files.
+Simple Projection Export Tool
+==============================
 
-This script walks a directory, finds every ``.ims`` file, and writes three
-per-channel projections (max, mean, median) without applying any additional
-transformations. Results are saved alongside the input data under a
-``simple_projections`` directory.
+Purpose
+-------
+Create a reproducible, easy-to-read snapshot of each channel contained in an
+Imaris ``.ims`` file by exporting the core statistical projections (max, mean,
+median) and accompanying visual guides. The script is designed for quick
+quality-control passes and downstream quantification without modifying the raw
+data.
+
+Inputs
+------
+- A folder containing stitched Imaris ``.ims`` files. (Sidecar ``.txt`` files
+  are ignored.)
+- Optional ``--recursive`` flag to recurse into sub-folders.
+
+Outputs (per ``.ims`` file)
+---------------------------
+``simple_projections/<ims_stem>/16bit/``
+    Max / mean / median projections scaled to unsigned 16-bit. If the source
+    data already fits in ≤16-bit, the original dtype is preserved.
+
+``simple_projections/<ims_stem>/8bit/``
+    Max / mean / median projections normalised to unsigned 8-bit for quick
+    inspection by tools that expect 8-bit imagery.
+
+``simple_projections/<ims_stem>/figures/``
+    Colourised PNG panels (one per projection) grouped into three sub-folders:
+
+    * ``raw_min_max/`` – raw min/max stretch
+    * ``percentile_95/`` – min → 95th percentile stretch
+    * ``median_mad/`` – median ± 3×MAD stretch
+
+    A ``README.txt`` inside ``figures/`` describes each scaling strategy and
+    notes that underlying TIFF exports are untouched.
+
+Processing Steps
+----------------
+1. Discover matching ``.ims`` files.
+2. Load channel metadata via :func:`imaris_tools.metadata.read_metadata` to
+   retrieve channel names and colours.
+3. Stream the HDF5 datasets with ``h5py`` and compute raw max/mean/median
+   projections (no filtering or background subtraction).
+4. Save a 16-bit and an 8-bit TIFF per projection.
+5. Generate three diagnostic PNG panels per projection using channel-specific
+   pseudocolours and clearly labelled colour bars.
+6. Emit a figure manifest so collaborators can understand the scaling without
+   reading the source.
+
+Dependencies
+------------
+- ``imaris_tools`` package in this repository (accessed via the local symlink).
+- ``h5py``, ``numpy``, ``tifffile``, ``matplotlib`` (installed through the
+  project's Conda environment).
+
+Usage Example
+-------------
+.. code-block:: console
+
+    conda activate organoid_roi_incucyte_imaging
+    cd path/to/organoid-roi-tool
+    python simple_projection_tool/simple_channel_projections.py \\
+        --source /path/to/ims_folder
+
+The script may be invoked from any directory, but it expects to be run after
+activating the same environment that powers the rest of this project so that
+``imaris_tools`` and its dependencies are importable.
 """
 
 from __future__ import annotations
