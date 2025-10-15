@@ -118,18 +118,41 @@ def _process_file(path: Path) -> None:
             for label, array in projections:
                 raw_path = output_16 / f"{sanitized}_{label}.tif"
                 eight_path = output_8 / f"{sanitized}_{label}.tif"
-                figure_path = output_fig / f"{sanitized}_{label}.png"
 
                 arr16 = _to_uint16(array)
                 arr8 = _to_uint8(array)
 
                 tiff.imwrite(raw_path, arr16)
                 tiff.imwrite(eight_path, arr8)
+
+                raw_fig = output_fig / f"{sanitized}_{label}_raw.png"
+                p95_fig = output_fig / f"{sanitized}_{label}_p95.png"
+                mad_fig = output_fig / f"{sanitized}_{label}_mad.png"
+
                 _save_colorbar_figure(
                     array,
-                    figure_path,
+                    raw_fig,
                     title=f"{channel_name} - {label}",
+                    subtitle="raw min/max",
                     color=channel_color,
+                )
+                _save_colorbar_figure(
+                    array,
+                    p95_fig,
+                    title=f"{channel_name} - {label}",
+                    subtitle="0–95th percentile",
+                    color=channel_color,
+                    scaling="percentile",
+                    percentile=95.0,
+                )
+                _save_colorbar_figure(
+                    array,
+                    mad_fig,
+                    title=f"{channel_name} - {label}",
+                    subtitle="median±3·MAD",
+                    color=channel_color,
+                    scaling="mad",
+                    mad_scale=3.0,
                 )
 
 
@@ -189,22 +212,73 @@ def _to_uint8(array: np.ndarray) -> np.ndarray:
     return np.clip(np.round(normalized * 255.0), 0, 255).astype(np.uint8)
 
 
-def _save_colorbar_figure(array: np.ndarray, path: Path, *, title: str, color: Tuple[float, float, float]) -> None:
+def _save_colorbar_figure(
+    array: np.ndarray,
+    path: Path,
+    *,
+    title: str,
+    subtitle: str,
+    color: Tuple[float, float, float],
+    scaling: str = "raw",
+    percentile: float = 95.0,
+    mad_scale: float = 3.0,
+) -> None:
     data = np.asarray(array, dtype=np.float32)
-    vmin = float(data.min())
-    vmax = float(data.max())
+    raw_min = float(data.min())
+    raw_max = float(data.max())
+
+    vmin, vmax = _determine_scale(
+        data,
+        mode=scaling,
+        percentile=percentile,
+        mad_scale=mad_scale,
+        raw_min=raw_min,
+        raw_max=raw_max,
+    )
     color = tuple(max(0.0, min(1.0, float(c))) for c in color)
     cmap = LinearSegmentedColormap.from_list("channel_map", [(0.0, 0.0, 0.0), color])
 
     fig, ax = plt.subplots(figsize=(5, 4), constrained_layout=True)
     img = ax.imshow(data, cmap=cmap, vmin=vmin, vmax=vmax)
-    ax.set_title(f"{title}\nmin={vmin:.2f}, max={vmax:.2f}")
+    ax.set_title(f"{title}\n{subtitle}: {vmin:.2f}–{vmax:.2f}")
     ax.set_xticks([])
     ax.set_yticks([])
     cbar = fig.colorbar(img, ax=ax)
     cbar.set_label("Pixel intensity")
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def _determine_scale(
+    data: np.ndarray,
+    *,
+    mode: str,
+    percentile: float,
+    mad_scale: float,
+    raw_min: float,
+    raw_max: float,
+) -> Tuple[float, float]:
+    if raw_max <= raw_min:
+        return raw_min, raw_max
+
+    if mode == "percentile":
+        top = float(np.percentile(data, percentile))
+        if top <= raw_min:
+            top = raw_max
+        return raw_min, min(top, raw_max)
+
+    if mode == "mad":
+        median = float(np.median(data))
+        mad = float(np.median(np.abs(data - median)))
+        if mad == 0.0:
+            return raw_min, raw_max
+        vmin = max(raw_min, median - mad_scale * mad)
+        vmax = min(raw_max, median + mad_scale * mad)
+        if vmax <= vmin:
+            return raw_min, raw_max
+        return vmin, vmax
+
+    return raw_min, raw_max
 
 
 if __name__ == "__main__":
