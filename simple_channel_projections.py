@@ -88,6 +88,14 @@ def _process_file(path: Path) -> None:
     output_8.mkdir(parents=True, exist_ok=True)
     output_fig.mkdir(parents=True, exist_ok=True)
 
+    figure_directories = {
+        "raw": output_fig / "raw_min_max",
+        "p95": output_fig / "percentile_95",
+        "mad": output_fig / "median_mad",
+    }
+    for directory in figure_directories.values():
+        directory.mkdir(parents=True, exist_ok=True)
+
     with h5py.File(path, "r") as handle:
         channel_paths = _discover_channel_paths(handle)
         if not channel_paths:
@@ -125,20 +133,16 @@ def _process_file(path: Path) -> None:
                 tiff.imwrite(raw_path, arr16)
                 tiff.imwrite(eight_path, arr8)
 
-                raw_fig = output_fig / f"{sanitized}_{label}_raw.png"
-                p95_fig = output_fig / f"{sanitized}_{label}_p95.png"
-                mad_fig = output_fig / f"{sanitized}_{label}_mad.png"
-
                 _save_colorbar_figure(
                     array,
-                    raw_fig,
+                    figure_directories["raw"] / f"{sanitized}_{label}.png",
                     title=f"{channel_name} - {label}",
                     subtitle="raw min/max",
                     color=channel_color,
                 )
                 _save_colorbar_figure(
                     array,
-                    p95_fig,
+                    figure_directories["p95"] / f"{sanitized}_{label}.png",
                     title=f"{channel_name} - {label}",
                     subtitle="0–95th percentile",
                     color=channel_color,
@@ -147,13 +151,15 @@ def _process_file(path: Path) -> None:
                 )
                 _save_colorbar_figure(
                     array,
-                    mad_fig,
+                    figure_directories["mad"] / f"{sanitized}_{label}.png",
                     title=f"{channel_name} - {label}",
                     subtitle="median±3·MAD",
                     color=channel_color,
                     scaling="mad",
                     mad_scale=3.0,
                 )
+
+    _write_figures_manifest(output_fig)
 
 
 def _discover_channel_paths(handle: h5py.File) -> List[Tuple[int, h5py.Dataset]]:
@@ -279,6 +285,34 @@ def _determine_scale(
         return vmin, vmax
 
     return raw_min, raw_max
+
+
+def _write_figures_manifest(root: Path) -> None:
+    manifest_path = root / "README.txt"
+    content = """Channel projection visualization guide
+================================
+
+This folder contains 3 subdirectories, each rendering the same channel
+projections with different intensity scaling strategies. Underlying
+TIFF exports in ../16bit and ../8bit remain untouched.
+
+Subdirectories
+--------------
+raw_min_max/
+    Displays the raw pixel range with no scaling beyond global min/max.
+percentile_95/
+    Intensity range is min → 95th percentile, emphasizing dim structures
+    while compressing bright outliers. Pixel values remain raw underneath.
+median_mad/
+    Uses median ± 3 × MAD (median absolute deviation) for a robust view
+    centred around typical intensities. Highlights very bright or very
+    dim outliers less aggressively.
+
+All PNGs are pseudo-coloured using the channel colour defined in the
+Imaris metadata so that hue hints at the fluorophore while the scale
+bar reflects original pixel units.
+"""
+    manifest_path.write_text(content.strip() + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
