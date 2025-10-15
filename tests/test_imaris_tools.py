@@ -189,6 +189,12 @@ def test_export_directory_writes_outputs(tmp_path: Path) -> None:
     colorized = tiff.imread(colorized_path)
     assert colorized.shape[-1] == 3
 
+    overview_folders = {Path(row["output_folder"]) for row in rows}
+    for folder in overview_folders:
+        overview_file = folder / "overview.pdf"
+        assert overview_file.exists()
+        assert overview_file.stat().st_size > 0
+
 
 def test_plot_folder_projection_grid(tmp_path: Path, ims_file: Path) -> None:
     folder = tmp_path / "grid_inputs"

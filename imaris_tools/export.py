@@ -16,6 +16,7 @@ from .metadata import (
     default_channel_color,
 )
 from .projections import colorize_projection, process_file
+from .plotting import save_per_file_overview
 
 PathLike = Union[str, Path]
 _SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -33,6 +34,10 @@ def export_directory(
     composite_dtype: Union[np.dtype, type] = np.uint16,
     colorized_dtype: Optional[Union[np.dtype, type]] = None,
     overwrite: bool = False,
+    verbose: bool = False,
+    save_overview: bool = True,
+    overview_percentile: float = 95.0,
+    overview_dpi: int = 150,
 ) -> Path:
     """Export metadata and projections for every Imaris file in ``source``."""
     base_dir = Path(source)
@@ -45,8 +50,14 @@ def export_directory(
     metadata_csv = Path(csv_path) if csv_path is not None else (output_dir / "metadata_summary.csv")
     color_dtype = colorized_dtype if colorized_dtype is not None else composite_dtype
 
+    files = list(_iter_ims_files(base_dir, pattern=pattern, recursive=recursive))
+    if verbose:
+        print(f"[info] Found {len(files)} file(s) matching pattern '{pattern}' in {base_dir}")
+
     rows: List[Dict[str, object]] = []
-    for ims_path in _iter_ims_files(base_dir, pattern=pattern, recursive=recursive):
+    for idx, ims_path in enumerate(files, start=1):
+        if verbose:
+            print(f"[step] ({idx}/{len(files)}) Processing {ims_path}...")
         try:
             result = process_file(
                 ims_path,
@@ -98,8 +109,8 @@ def export_directory(
             height, width = channel_array.shape[-2], channel_array.shape[-1]
             voxel = result.metadata.voxel_size_um or (None, None, None)
 
-            rows.append(
-                {
+        rows.append(
+            {
                     "source_path": str(ims_path),
                     "file_name": ims_path.name,
                     "output_folder": str(per_file_dir),
@@ -129,7 +140,23 @@ def export_directory(
                 }
             )
 
+        if verbose:
+            print(f"[info]   Saved outputs to {per_file_dir}")
+
+        if save_overview:
+            overview_path = per_file_dir / "overview.pdf"
+            save_per_file_overview(
+                result,
+                overview_path,
+                percentile=overview_percentile,
+                dpi=overview_dpi,
+            )
+            if verbose:
+                print(f"[info]   Overview figure saved to {overview_path}")
+
     _write_metadata_csv(metadata_csv, rows)
+    if verbose:
+        print(f"[info] Wrote summary CSV to {metadata_csv}")
     return metadata_csv
 
 

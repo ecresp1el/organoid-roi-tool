@@ -58,6 +58,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Skip generation of the per-channel grid PDF.",
     )
     parser.add_argument(
+        "--skip-overview",
+        action="store_true",
+        help="Skip generation of per-image 1xN overview figures.",
+    )
+    parser.add_argument(
         "--grid-percentile",
         type=float,
         default=95.0,
@@ -68,6 +73,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=int,
         default=150,
         help="DPI for the generated PDF when plotting the grid (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--overview-percentile",
+        type=float,
+        default=95.0,
+        help="Percentile used to scale per-image overview figures (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--overview-dpi",
+        type=int,
+        default=150,
+        help="DPI for per-image overview figures (default: %(default)s).",
     )
     return parser.parse_args(argv)
 
@@ -93,6 +110,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"[info] Project folder: {project_folder}")
     print(f"[info] Output folder:  {output_root}")
 
+    print("[step] Exporting per-channel projections and metadata...")
     try:
         csv_path = export_directory(
             project_folder,
@@ -100,6 +118,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             pattern="*.ims",
             recursive=args.recursive,
             overwrite=args.overwrite,
+            verbose=True,
+            save_overview=not args.skip_overview,
+            overview_percentile=args.overview_percentile,
+            overview_dpi=args.overview_dpi,
         )
     except FileNotFoundError as exc:
         print(f"[error] {exc}", file=sys.stderr)
@@ -113,6 +135,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not args.skip_grid:
         grid_path = output_root / "channel_overview.pdf"
         try:
+            print("[step] Generating channel overview grid...")
             plot_folder_projection_grid(
                 project_folder,
                 grid_path,

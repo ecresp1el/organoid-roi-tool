@@ -165,4 +165,64 @@ def _channel_metadata_lookup(
     return None
 
 
-__all__ = ["plot_folder_projection_grid"]
+def save_per_file_overview(
+    result,
+    output_path: PathLike,
+    *,
+    percentile: float = 95.0,
+    dpi: int = 150,
+) -> Path:
+    """
+    Save a single-row panel showing every channel projection plus the composite image
+    for ``result``.
+    """
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    channel_indices = sorted(result.channel_names.keys())
+    col_count = len(channel_indices) + 1
+    fig_width = max(6, col_count * 4)
+
+    fig, axes = plt.subplots(
+        1,
+        col_count,
+        figsize=(fig_width, 4),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    ax_row = axes[0]
+
+    for col, channel_index in enumerate(channel_indices):
+        ax = ax_row[col]
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        unique_name = result.channel_names.get(channel_index)
+        array = result.channel_projections.get(unique_name) if unique_name else None
+
+        if array is None:
+            ax.set_facecolor("lightgrey")
+            ax.set_title(f"Channel {channel_index} (missing)", fontsize=10)
+            continue
+
+        vmax = _percentile_or_max(array, percentile)
+        cmap = _colormap_for_channel(result.metadata.channels, channel_index)
+        img = ax.imshow(array, cmap=cmap, vmin=0, vmax=vmax)
+        plt.colorbar(img, ax=ax, fraction=0.046, pad=0.04)
+
+        channel_meta = _channel_metadata_lookup(result.metadata.channels, channel_index)
+        title = channel_meta.name if channel_meta is not None else unique_name
+        ax.set_title(f"{title}\np{percentile:.0f}={vmax:.1f}", fontsize=10)
+
+    composite_ax = ax_row[-1]
+    composite_ax.set_xticks([])
+    composite_ax.set_yticks([])
+    composite_ax.imshow(result.composite_rgb)
+    composite_ax.set_title("Composite", fontsize=10)
+
+    fig.savefig(output, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return output
+
+
+__all__ = ["plot_folder_projection_grid", "save_per_file_overview"]
