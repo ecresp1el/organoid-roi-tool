@@ -17,6 +17,7 @@ from .metadata import (
 )
 from .projections import colorize_projection, process_file
 from .plotting import save_per_file_overview
+from .stats import compute_statistics
 
 PathLike = Union[str, Path]
 _SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -77,11 +78,11 @@ def export_directory(
             shutil.rmtree(per_file_dir)
         per_file_dir.mkdir(parents=True, exist_ok=True)
 
-        metadata_json_path, metadata_xml_path = _write_metadata_files(
-            result.metadata,
-            channel_names=result.channel_names,
-            folder=per_file_dir,
-        )
+        metadata_json_path = per_file_dir / "metadata.json"
+        metadata_xml_path: Optional[Path] = None
+        if result.metadata.raw_xml:
+            metadata_xml_path = per_file_dir / "dataset_info.xml"
+            metadata_xml_path.write_text(result.metadata.raw_xml)
 
         composite_path = per_file_dir / "composite_rgb.tif"
         tiff.imwrite(composite_path, result.composite_rgb, photometric="rgb")
@@ -89,6 +90,8 @@ def export_directory(
         channel_lookup: Dict[int, ImarisChannelMetadata] = {
             channel.index: channel for channel in result.metadata.channels
         }
+
+        channel_stats: Dict[int, Dict[str, float]] = {}
 
         for index in sorted(result.channel_names.keys()):
             unique_name = result.channel_names[index]
@@ -109,36 +112,40 @@ def export_directory(
             height, width = channel_array.shape[-2], channel_array.shape[-1]
             voxel = result.metadata.voxel_size_um or (None, None, None)
 
-        rows.append(
-            {
-                    "source_path": str(ims_path),
-                    "file_name": ims_path.name,
-                    "output_folder": str(per_file_dir),
-                    "channel_index": index,
-                    "channel_name": channel_info.name if channel_info is not None else unique_name,
-                    "channel_unique_name": unique_name,
-                    "channel_color_r": color_rgb[0],
-                    "channel_color_g": color_rgb[1],
-                    "channel_color_b": color_rgb[2],
-                    "channel_z_planes": z_planes,
-                    "width_px": width,
-                    "height_px": height,
-                    "projection_dtype": str(channel_array.dtype),
-                    "colorized_dtype": str(colorized.dtype),
-                    "voxel_size_x_um": voxel[0],
-                    "voxel_size_y_um": voxel[1],
-                    "voxel_size_z_um": voxel[2],
-                    "time_delta_s": result.metadata.time_delta_s,
-                    "time_points": result.metadata.dimensions_xyzct[4],
-                    "resolution_level": resolution_level,
-                    "time_point": time_point,
-                    "projection_path": str(grayscale_path),
-                    "colorized_path": str(colorized_path),
-                    "composite_path": str(composite_path),
-                    "metadata_json_path": str(metadata_json_path),
-                    "metadata_xml_path": str(metadata_xml_path) if metadata_xml_path else "",
-                }
-            )
+            stats = compute_statistics(channel_array)
+            channel_stats[index] = stats
+
+            row = {
+                "source_path": str(ims_path),
+                "file_name": ims_path.name,
+                "output_folder": str(per_file_dir),
+                "channel_index": index,
+                "channel_name": channel_info.name if channel_info is not None else unique_name,
+                "channel_unique_name": unique_name,
+                "channel_color_r": color_rgb[0],
+                "channel_color_g": color_rgb[1],
+                "channel_color_b": color_rgb[2],
+                "channel_z_planes": z_planes,
+                "width_px": width,
+                "height_px": height,
+                "projection_dtype": str(channel_array.dtype),
+                "colorized_dtype": str(colorized.dtype),
+                "voxel_size_x_um": voxel[0],
+                "voxel_size_y_um": voxel[1],
+                "voxel_size_z_um": voxel[2],
+                "time_delta_s": result.metadata.time_delta_s,
+                "time_points": result.metadata.dimensions_xyzct[4],
+                "resolution_level": resolution_level,
+                "time_point": time_point,
+                "projection_path": str(grayscale_path),
+                "colorized_path": str(colorized_path),
+                "composite_path": str(composite_path),
+                "metadata_json_path": str(metadata_json_path),
+                "metadata_xml_path": str(metadata_xml_path) if metadata_xml_path else "",
+            }
+            for metric_name, value in stats.items():
+                row[f"stat_{metric_name}"] = value
+            rows.append(row)
 
         if verbose:
             print(f"[info]   Saved outputs to {per_file_dir}")
@@ -153,6 +160,14 @@ def export_directory(
             )
             if verbose:
                 print(f"[info]   Overview figure saved to {overview_path}")
+
+        _write_metadata_json(
+            result.metadata,
+            channel_names=result.channel_names,
+            channel_stats=channel_stats,
+            json_path=metadata_json_path,
+            xml_path=metadata_xml_path,
+        )
 
     _write_metadata_csv(metadata_csv, rows)
     if verbose:
@@ -175,25 +190,11 @@ def _sanitize_name(name: str) -> str:
     return sanitized or "channel"
 
 
-def _write_metadata_files(
-    metadata: ImarisMetadata,
-    *,
-    channel_names: Dict[int, str],
-    folder: Path,
-) -> Tuple[Path, Optional[Path]]:
-    metadata_json_path = folder / "metadata.json"
-    dataset_info_path: Optional[Path] = None
-    if metadata.raw_xml:
-        dataset_info_path = folder / "dataset_info.xml"
-        dataset_info_path.write_text(metadata.raw_xml)
-    _write_metadata_json(metadata, channel_names=channel_names, json_path=metadata_json_path, xml_path=dataset_info_path)
-    return metadata_json_path, dataset_info_path
-
-
 def _write_metadata_json(
     metadata: ImarisMetadata,
     *,
     channel_names: Dict[int, str],
+    channel_stats: Dict[int, Dict[str, float]],
     json_path: Path,
     xml_path: Optional[Path],
 ) -> None:
@@ -233,6 +234,8 @@ def _write_metadata_json(
                     "detection_wavelength_nm": channel_info.detection_wavelength_nm,
                 }
             )
+        if index in channel_stats:
+            entry["statistics"] = channel_stats[index]
         payload["channels"].append(entry)
 
     with json_path.open("w", encoding="utf-8") as handle:

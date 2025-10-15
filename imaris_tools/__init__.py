@@ -30,6 +30,7 @@ from .projections import (
 )
 from .plotting import plot_folder_projection_grid, save_per_file_overview
 from .export import export_directory
+from .stats import compute_statistics, DEFAULT_STAT_FUNCS
 
 __all__ = [
     "ImarisChannelMetadata",
@@ -44,4 +45,6 @@ __all__ = [
     "export_directory",
     "plot_folder_projection_grid",
     "save_per_file_overview",
+    "compute_statistics",
+    "DEFAULT_STAT_FUNCS",
 ]

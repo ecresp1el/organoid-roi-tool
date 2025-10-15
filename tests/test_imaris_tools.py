@@ -182,9 +182,20 @@ def test_export_directory_writes_outputs(tmp_path: Path) -> None:
     assert composite_path.exists()
     assert metadata_json_path.exists()
 
+    assert "stat_mean" in sample_row
+    assert "stat_median" in sample_row
+    assert "stat_max" in sample_row
+    assert "stat_min" in sample_row
+    assert "stat_range" in sample_row
+    assert float(sample_row["stat_max"]) >= float(sample_row["stat_min"])
+
     metadata_payload = json.loads(metadata_json_path.read_text())
     assert metadata_payload["channels"]
     assert metadata_payload["channels"][0]["unique_name"]
+    stats = metadata_payload["channels"][0]["statistics"]
+    assert stats
+    assert "mean" in stats
+    assert stats["max"] >= stats["min"]
 
     colorized = tiff.imread(colorized_path)
     assert colorized.shape[-1] == 3
