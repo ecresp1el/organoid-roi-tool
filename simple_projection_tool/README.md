@@ -45,11 +45,23 @@ The script relies on:
 
 ## 3. Running the script
 
+Typical workflow from a fresh terminal:
+
 ```bash
-cd path/to/organoid-roi-tool
+conda activate organoid_roi_incucyte_imaging
+cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
 python simple_projection_tool/simple_channel_projections.py \
-    --source /path/to/folder/with/ims/files \
-    [--recursive]
+    --source /Users/ecrespo/Desktop/nestin_dcx_pcdh19_kovswt
+```
+
+Another example for the archival dataset on the external drive:
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
+python simple_projection_tool/simple_channel_projections.py \
+    --source /Volumes/Manny4TBUM/2025-10-15 \
+    --recursive
 ```
 
 Options:
@@ -57,7 +69,7 @@ Options:
 - `--source`: Root folder containing `.ims` files (defaults to `/Volumes/Manny4TBUM/2025-10-15`).
 - `--recursive`: Process files inside subdirectories as well.
 
-You can invoke the script from any working directory as long as the repository is accessible and the Conda environment is active.
+You can invoke the script from any working directory as long as the repository is accessible and the Conda environment is active. The examples above show the exact commands tested in February 2025; replicate them verbatim to reproduce the results.
 
 ---
 
