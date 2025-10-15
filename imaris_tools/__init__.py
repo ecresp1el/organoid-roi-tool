@@ -31,6 +31,7 @@ from .projections import (
 from .plotting import plot_folder_projection_grid, save_per_file_overview
 from .export import export_directory
 from .stats import compute_statistics, DEFAULT_STAT_FUNCS
+from .quicklook import save_fluorescent_max_projections
 
 __all__ = [
     "ImarisChannelMetadata",
@@ -47,4 +48,5 @@ __all__ = [
     "save_per_file_overview",
     "compute_statistics",
     "DEFAULT_STAT_FUNCS",
+    "save_fluorescent_max_projections",
 ]

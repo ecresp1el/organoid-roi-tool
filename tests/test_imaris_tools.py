@@ -16,6 +16,7 @@ from imaris_tools import (
     process_directory,
     process_file,
     read_metadata,
+    save_fluorescent_max_projections,
 )
 
 
@@ -217,3 +218,20 @@ def test_plot_folder_projection_grid(tmp_path: Path, ims_file: Path) -> None:
     result_path = plot_folder_projection_grid(folder, pdf_path, percentile=90.0, dpi=50)
     assert result_path.exists()
     assert result_path.stat().st_size > 0
+
+
+def test_save_fluorescent_max_projections(tmp_path: Path, ims_file: Path) -> None:
+    folder = tmp_path / "fluor_inputs"
+    folder.mkdir()
+    target = folder / ims_file.name
+    shutil.copy2(ims_file, target)
+
+    output = tmp_path / "fluor_outputs"
+    result_dir = save_fluorescent_max_projections(folder, output_root=output)
+    assert result_dir.exists()
+
+    saved = sorted(result_dir.glob("*.tif"))
+    # All three channels in the synthetic dataset contain excitation metadata.
+    assert len(saved) == 3
+    for path in saved:
+        assert path.stat().st_size > 0
