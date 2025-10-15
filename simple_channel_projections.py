@@ -19,8 +19,9 @@ import tifffile as tiff  # type: ignore
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 
-from imaris_tools.metadata import read_metadata
+from imaris_tools.metadata import read_metadata, default_channel_color
 
 DEFAULT_SOURCE = Path("/Volumes/Manny4TBUM/2025-10-15")
 OUTPUT_FOLDER_NAME = "simple_projections"
@@ -77,7 +78,7 @@ def _collect_files(folder: Path, *, recursive: bool) -> Iterable[Path]:
 
 def _process_file(path: Path) -> None:
     metadata = read_metadata(path)
-    channel_names = {channel.index: channel.name for channel in metadata.channels}
+    channel_lookup = {channel.index: channel for channel in metadata.channels}
 
     output_root = path.parent / OUTPUT_FOLDER_NAME / path.stem
     output_16 = output_root / "16bit"
@@ -103,8 +104,10 @@ def _process_file(path: Path) -> None:
             mean_proj = np.mean(data, axis=0)
             median_proj = np.median(data, axis=0)
 
-            channel_name = channel_names.get(channel_index, f"Channel_{channel_index:02d}")
+            channel_info = channel_lookup.get(channel_index)
+            channel_name = channel_info.name if channel_info is not None else f"Channel_{channel_index:02d}"
             sanitized = _sanitize_name(channel_name)
+            channel_color = channel_info.color_rgb if channel_info is not None else default_channel_color(channel_index)
 
             projections = [
                 ("max", max_proj),
@@ -122,7 +125,12 @@ def _process_file(path: Path) -> None:
 
                 tiff.imwrite(raw_path, arr16)
                 tiff.imwrite(eight_path, arr8)
-                _save_colorbar_figure(array, figure_path, title=f"{channel_name} - {label}")
+                _save_colorbar_figure(
+                    array,
+                    figure_path,
+                    title=f"{channel_name} - {label}",
+                    color=channel_color,
+                )
 
 
 def _discover_channel_paths(handle: h5py.File) -> List[Tuple[int, h5py.Dataset]]:
@@ -181,13 +189,15 @@ def _to_uint8(array: np.ndarray) -> np.ndarray:
     return np.clip(np.round(normalized * 255.0), 0, 255).astype(np.uint8)
 
 
-def _save_colorbar_figure(array: np.ndarray, path: Path, *, title: str) -> None:
+def _save_colorbar_figure(array: np.ndarray, path: Path, *, title: str, color: Tuple[float, float, float]) -> None:
     data = np.asarray(array, dtype=np.float32)
     vmin = float(data.min())
     vmax = float(data.max())
+    color = tuple(max(0.0, min(1.0, float(c))) for c in color)
+    cmap = LinearSegmentedColormap.from_list("channel_map", [(0.0, 0.0, 0.0), color])
 
     fig, ax = plt.subplots(figsize=(5, 4), constrained_layout=True)
-    img = ax.imshow(data, cmap="viridis", vmin=vmin, vmax=vmax)
+    img = ax.imshow(data, cmap=cmap, vmin=vmin, vmax=vmax)
     ax.set_title(f"{title}\nmin={vmin:.2f}, max={vmax:.2f}")
     ax.set_xticks([])
     ax.set_yticks([])
