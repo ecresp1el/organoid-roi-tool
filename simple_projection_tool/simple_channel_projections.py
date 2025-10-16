@@ -151,8 +151,11 @@ def _process_file(path: Path) -> None:
     output_fig.mkdir(parents=True, exist_ok=True)
 
     figure_directories = {
+        # Raw visualisation: background and foreground displayed exactly as stored.
         "raw": output_fig / "raw_min_max",
+        # Percentile scaling: bleed the upper colour bar limit down to the 95th percentile.
         "p95": output_fig / "percentile_95",
+        # MAD scaling: centre the view on the median with a ±3×MAD bandwidth.
         "mad": output_fig / "median_mad",
     }
     for directory in figure_directories.values():
@@ -165,14 +168,15 @@ def _process_file(path: Path) -> None:
             return
 
         for channel_index, dataset in channel_paths:
-            data = dataset[()]  # NumPy array (Z, Y, X)
+            data = dataset[()]  # NumPy array shaped (Z, Y, X)
             if data.ndim < 3:
                 print(f"[warn] Unexpected channel shape {data.shape} in {path}")
                 continue
 
-            max_proj = np.max(data, axis=0)
-            mean_proj = np.mean(data, axis=0)
-            median_proj = np.median(data, axis=0)
+            # Collapse the Z-stack without altering pixel values.
+            max_proj = np.max(data, axis=0)        # brightest voxel per (Y, X)
+            mean_proj = np.mean(data, axis=0)      # average voxel per (Y, X)
+            median_proj = np.median(data, axis=0)  # middle voxel per (Y, X)
 
             channel_info = channel_lookup.get(channel_index)
             channel_name = channel_info.name if channel_info is not None else f"Channel_{channel_index:02d}"
@@ -201,6 +205,7 @@ def _process_file(path: Path) -> None:
                     title=f"{channel_name} - {label}",
                     subtitle="raw min/max",
                     color=channel_color,
+                    scaling="raw",
                 )
                 _save_colorbar_figure(
                     array,
@@ -225,6 +230,7 @@ def _process_file(path: Path) -> None:
 
 
 def _discover_channel_paths(handle: h5py.File) -> List[Tuple[int, h5py.Dataset]]:
+    """Return (channel_index, dataset) pairs for the first resolution/timepoint."""
     result: List[Tuple[int, h5py.Dataset]] = []
     dataset_group = handle.get("DataSet")
     if dataset_group is None:
@@ -259,6 +265,7 @@ def _sanitize_name(name: str) -> str:
 
 
 def _to_uint16(array: np.ndarray) -> np.ndarray:
+    """Normalise ``array`` into the full 16-bit range while preserving monotonicity."""
     data = np.asarray(array)
     if np.issubdtype(data.dtype, np.integer) and data.dtype.itemsize <= 2:
         return data.astype(np.uint16, copy=False)
@@ -271,6 +278,7 @@ def _to_uint16(array: np.ndarray) -> np.ndarray:
 
 
 def _to_uint8(array: np.ndarray) -> np.ndarray:
+    """Normalise ``array`` into 8-bit range (0–255) for quick-look TIFFs."""
     data = np.asarray(array, dtype=np.float64)
     min_val = float(data.min())
     max_val = float(data.max())
@@ -291,6 +299,25 @@ def _save_colorbar_figure(
     percentile: float = 95.0,
     mad_scale: float = 3.0,
 ) -> None:
+    """Render a single-channel projection with an explanatory colour bar.
+
+    Parameters
+    ----------
+    array:
+        2-D projection (Y, X) with raw float/integer intensities.
+    path:
+        Destination PNG path.
+    title / subtitle:
+        Human-readable text dropped onto the figure.
+    color:
+        Channel colour from Imaris metadata (RGB in [0, 1]); used to create
+        a single-hue colormap anchored at black.
+    scaling:
+        Strategy name: ``"raw"`` (full range), ``"percentile"`` (min→percentile)
+        or ``"mad"`` (median ± mad_scale × MAD).
+    percentile / mad_scale:
+        Parameters controlling the percentile and MAD bandwidth respectively.
+    """
     data = np.asarray(array, dtype=np.float32)
     raw_min = float(data.min())
     raw_max = float(data.max())
@@ -326,16 +353,20 @@ def _determine_scale(
     raw_min: float,
     raw_max: float,
 ) -> Tuple[float, float]:
+    """Return (vmin, vmax) bounds for the requested visualisation mode."""
     if raw_max <= raw_min:
         return raw_min, raw_max
 
     if mode == "percentile":
+        # Upper threshold is defined by the requested percentile (95 by default)
+        # to down-weight a small number of very bright voxels.
         top = float(np.percentile(data, percentile))
         if top <= raw_min:
             top = raw_max
         return raw_min, min(top, raw_max)
 
     if mode == "mad":
+        # Scale symmetrically around the median with +/- mad_scale * MAD.
         median = float(np.median(data))
         mad = float(np.median(np.abs(data - median)))
         if mad == 0.0:
@@ -346,10 +377,12 @@ def _determine_scale(
             return raw_min, raw_max
         return vmin, vmax
 
+    # Default: raw min/max
     return raw_min, raw_max
 
 
 def _write_figures_manifest(root: Path) -> None:
+    """Drop a text explanation of the scaling methods into ``figures/``."""
     manifest_path = root / "README.txt"
     content = """Channel projection visualization guide
 ================================

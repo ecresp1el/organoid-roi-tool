@@ -20,9 +20,17 @@ This utility creates a standardised set of projections and visualisations for ea
    | `simple_projections/<ims_stem>/16bit/` | Max/mean/median TIFFs stored as unsigned 16-bit. If the source data already fits in ≤16-bit it is preserved verbatim. |
    | `simple_projections/<ims_stem>/8bit/`  | Max/mean/median TIFFs normalised into unsigned 8-bit for quick viewing in generic software. |
    | `simple_projections/<ims_stem>/figures/` | PNG panels coloured with the Imaris channel colour and annotated with a colour bar. Subfolders describe the intensity scaling used: |
-   | `figures/raw_min_max/` | Raw minimum → maximum stretch (no scaling). |
-   | `figures/percentile_95/` | Minimum → 95th percentile stretch to down-weight hot outliers. |
-   | `figures/median_mad/` | Median ± 3×MAD (median absolute deviation) for a robust view centred on typical intensities. |
+| `figures/raw_min_max/` | Raw minimum → maximum stretch (no scaling). |
+| `figures/percentile_95/` | Minimum → 95th percentile stretch. `vmin = data.min()`, `vmax = min(data.max(), np.percentile(data, 95.0))` (see `_determine_scale(..., mode="percentile")`). |
+| `figures/median_mad/` | Median ± 3×MAD (median absolute deviation). `median = np.median(data)` and `mad = np.median(|data - median|)`, then `vmin = max(raw_min, median - 3×mad)`, `vmax = min(raw_max, median + 3×mad)` (implemented in `_determine_scale(..., mode="mad")`). |
+
+Both percentile- and MAD-based limits are calculated per image, so the PNGs faithfully reflect the raw dynamic range while emphasising structures of interest. The TIFFs remain untouched.
+
+For reference:
+
+- Raw TIFFs live in `16bit/` and `8bit/` exactly as returned by `_to_uint16` and `_to_uint8`.
+- Figure PNGs use the same projections but display data with the alternate scaling above.
+- Channel names in every filename come from Imaris metadata (sanitised to be filesystem-safe).
 
    Each `figures/` directory also carries a `README.txt` that explains the scaling strategies so collaborators can interpret the outputs without reading the code.
 
