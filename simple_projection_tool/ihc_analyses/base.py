@@ -67,12 +67,6 @@ class ProjectionAnalysis(abc.ABC):
             else self.base_path / "analysis_results" / self.name
         )
 
-        # Derived outputs (tables, plots) are stored beneath ``analysis_pipeline``
-        # to emphasise that they originate from a downstream analysis stage.
-        self.pipeline_dir = self.output_dir / "analysis_pipeline"
-        self.data_dir = self.pipeline_dir / "data"
-        self.figures_dir = self.pipeline_dir / "figures"
-
         # Subclasses can register additional tables for saving once the pipeline
         # finishes running.
         self.additional_tables: Dict[str, pd.DataFrame] = {}
@@ -87,6 +81,12 @@ class ProjectionAnalysis(abc.ABC):
             if name
         }
         self.channel_filter: Optional[set[str]] = normalised or None
+
+        # Derived outputs (tables, plots) are stored beneath ``analysis_pipeline``
+        # to emphasise that they originate from a downstream analysis stage. When
+        # channels are filtered we create a dedicated subdirectory keyed by the
+        # channel selection (e.g. ``analysis_pipeline/lhx6``).
+        self._configure_pipeline_dirs()
 
         # ``save_outputs`` and ``save_figure`` populate these lists so the CLI
         # can report exactly what was created during the run.
@@ -283,3 +283,30 @@ class ProjectionAnalysis(abc.ABC):
             for channel in channels
             if self._channel_is_selected(channel)
         ]
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _configure_pipeline_dirs(self) -> None:
+        """Set up channel-aware pipeline directories."""
+
+        slug = self._derive_channel_context_slug()
+        self.channel_context_slug = slug
+        self.pipeline_root = self.output_dir / "analysis_pipeline"
+        self.pipeline_dir = self.pipeline_root / slug
+        self.data_dir = self.pipeline_dir / "data"
+        self.figures_dir = self.pipeline_dir / "figures"
+
+    def _derive_channel_context_slug(self) -> str:
+        """Return a filesystem-friendly slug describing the channel filter."""
+
+        if not self.channel_filter_names:
+            return "all_channels"
+        slug_parts: list[str] = []
+        seen: set[str] = set()
+        for name in self.channel_filter_names:
+            normalised = self._normalise_channel_name(name)
+            if normalised and normalised not in seen:
+                slug_parts.append(normalised)
+                seen.add(normalised)
+        return "__".join(slug_parts) if slug_parts else "all_channels"

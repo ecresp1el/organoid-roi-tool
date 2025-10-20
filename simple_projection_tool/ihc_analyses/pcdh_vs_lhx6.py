@@ -102,6 +102,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         )
         # Preserve the user-requested names for logging/error messages.
         self.channel_filter_names = requested
+        self._configure_pipeline_dirs()
 
     def _expand_channel_aliases(self, names: Sequence[str]) -> tuple[str, ...]:
         """Return the union of names and any known aliases."""
@@ -470,6 +471,30 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         axes[0].set_title(f"{projection_type.upper()} projection: pixel mean")
         axes[0].set_ylabel("Pixel mean intensity (a.u.)")
         axes[0].grid(alpha=0.3)
+
+        # Overlay individual per-image means to expose the distribution.
+        scatter_x: list[float] = []
+        scatter_y: list[float] = []
+        for idx, arr in enumerate(values, start=1):
+            arr = arr.astype(float)
+            if arr.size == 0:
+                continue
+            if arr.size == 1:
+                jitter = np.array([0.0])
+            else:
+                jitter = np.linspace(-0.12, 0.12, arr.size)
+            scatter_x.extend((idx + jitter).tolist())
+            scatter_y.extend(arr.tolist())
+        if scatter_x:
+            axes[0].scatter(
+                scatter_x,
+                scatter_y,
+                color="black",
+                alpha=0.35,
+                s=22,
+                linewidths=0,
+                zorder=3,
+            )
 
         # Bar chart with mean +/- SEM
         means = [float(np.mean(arr)) for arr in values]

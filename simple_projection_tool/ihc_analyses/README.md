@@ -52,9 +52,10 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
   reporting.
 - Generate matched figures - box plots plus mean+/-SEM bar charts with Arial
   fonts - saved as `.svg` (editable text) and `.png` (300 dpi) in
-  `analysis_pipeline/figures/`.
+  `analysis_pipeline/<channel-slug>/figures/`. Each box plot overlays the raw
+  per-image means so the distribution remains visible.
 - Save the manifest, per-image results, grouped summaries, and hypothesis tests
-  as CSV tables in `analysis_pipeline/data/` inside
+  as CSV tables in `analysis_pipeline/<channel-slug>/data/` inside
   `<project>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/`.
 - Statistical testing relies on `scipy` (Welch t-tests and Mann-Whitney U). If
   the module is missing, install it in the Conda environment used for the

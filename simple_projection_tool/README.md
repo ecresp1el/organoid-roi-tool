@@ -158,8 +158,8 @@ Key points for non-programmers:
   projections use different channel names, supply them explicitly with repeated
   `--channel` flags.
 - All derived artefacts live in
-  `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/`:
-  - `data/manifest.csv` - catalogue of every projection inspected.
+  `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/<channel-slug>/`:
+  - `data/manifest.csv` - catalogue of every projection inspected for the selected channel(s).
   - `data/results.csv` - per-image pixel statistics (pixel count, mean, median,
     max, standard deviation, 95% confidence interval of the mean).
   - `data/group_summary.csv` - WT/KO summary table with `N`, mean, median, SEM,
@@ -170,7 +170,9 @@ Key points for non-programmers:
   statistics, plotting, saving) and lists every CSV or figure written so you can
   verify the run immediately.
 - `figures/` - paired boxplots plus mean+/-SEM charts (SVG and 300 dpi PNG)
-  using Arial fonts so the annotations remain editable in Illustrator.
+  using Arial fonts so the annotations remain editable in Illustrator. Each plot
+  overlays the per-image data points on top of the boxplot so the distribution is
+  visible.
 - To build a new analysis, copy the template described in
   [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in
   `ihc_analyses/__init__.py`.
