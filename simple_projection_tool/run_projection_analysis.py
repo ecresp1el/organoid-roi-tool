@@ -49,10 +49,7 @@ def main() -> int:
     )
     analysis.run()
     print(
-        "[done] {name} analysis complete. Data and plots are under {pipeline}.".format(
-            name=analysis.name,
-            pipeline=analysis.pipeline_dir,
-        )
+        f"[done] {analysis.name} analysis complete. Results written to {analysis.output_dir}."
     )
     return 0
 

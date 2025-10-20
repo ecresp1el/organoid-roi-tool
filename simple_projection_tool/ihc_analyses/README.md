@@ -16,11 +16,6 @@ it with minimal Python knowledge.  The common structure comes from
 The `ProjectionAnalysis` base class handles orchestration and saving, so each
 new analysis only needs to focus on the biological logic.
 
-All derivative artefacts (CSV tables and figures) are saved in a dedicated
-`analysis_pipeline/` folder inside each analysis output directory.  This makes it
-obvious that the content was produced by a downstream analysis rather than the
-original projection exporter.
-
 ---
 
 ## Current analyses
@@ -36,38 +31,13 @@ PCDH19 vs LHX6 immunostaining experiment.  It demonstrates how to:
   `IGIKO` = KO).
 - Load the 16-bit projection TIFFs (max/mean/median) created by
   `simple_channel_projections.py`.
-- Convert each 16-bit TIFF into a floating-point array without scaling and
-  compute descriptive statistics for every image (pixel count, mean, median,
-  standard deviation, maximum, and a 95 % confidence interval for the mean).
-- Summarise the WT vs KO comparison per projection type (max/mean/median) using
-  both Welch t-tests and Mann–Whitney U tests so publication-ready statistics
-  (`N`, group means/medians, SEM, confidence intervals, p-values) are saved for
-  reporting.
-- Generate matched figures—box plots plus mean±SEM bar charts with Arial fonts—
-  saved as `.svg` (editable text) and `.png` (300 dpi) in
-  `analysis_pipeline/figures/`.
-- Save the manifest, per-image results, grouped summaries, and hypothesis tests
-  as CSV tables in `analysis_pipeline/data/` inside
+- Compute descriptive statistics for each image, including a 95 % confidence
+  interval for the mean pixel intensity.
+- Save the manifest and the results to
   `<project>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/`.
-- Statistical testing relies on `scipy` (Welch t-tests and Mann–Whitney U).  If
-  the module is missing, install it in the Conda environment used for the
-  analysis.
 
 Use this file as a template for future biological questions—copy it, update the
 naming rules and statistics, and register the new class in `__init__.py`.
-
-### Pixel handling cheat-sheet for imaging scientists
-
-- Each projection TIFF is read exactly as exported (unsigned 16-bit).  The
-  analysis converts the array to `float64` solely to avoid rounding when
-  calculating statistics—no normalisation or scaling is applied.
-- Confidence intervals reported in the CSV files refer to the mean pixel
-  intensity per image.  Group-level summaries use the per-image means so the
-  `N` value corresponds to the number of projection images contributing to a
-  comparison.
-- Figures display the distribution of per-image mean intensities; they do **not**
-  alter the underlying TIFF values.  The SVG output keeps text as live Arial
-  objects for editing in Illustrator.
 
 ---
 
