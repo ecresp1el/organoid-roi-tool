@@ -586,6 +586,20 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
 
         return fig
 
+    def _confidence_interval(
+        self,
+        mean: float,
+        std: float,
+        count: float,
+    ) -> tuple[float, float]:
+        """Return the 95 percent confidence interval for the mean pixel intensity."""
+
+        if count <= 1 or std == 0.0:
+            return (mean, mean)
+        standard_error = std / np.sqrt(count)
+        margin = self.CONFIDENCE_Z * standard_error
+        return (mean - margin, mean + margin)
+
     @staticmethod
     def _extract_channel_name(filename: str) -> str:
         stem = Path(filename).stem
