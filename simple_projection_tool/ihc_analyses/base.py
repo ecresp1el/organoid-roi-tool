@@ -242,7 +242,13 @@ class ProjectionAnalysis(abc.ABC):
                 "bbox_inches": "tight",
             }
             if metadata:
-                save_kwargs["metadata"] = metadata
+                if ext == "svg":
+                    allowed = {"Creator", "Title", "Description", "Date"}
+                    filtered = {key: value for key, value in metadata.items() if key in allowed}
+                    if filtered:
+                        save_kwargs["metadata"] = filtered
+                else:
+                    save_kwargs["metadata"] = metadata
             figure.savefig(output_path, **save_kwargs)
             self.saved_figure_paths.append(output_path)
             print(f"[{self.name}]     saved figure -> {output_path}", flush=True)
