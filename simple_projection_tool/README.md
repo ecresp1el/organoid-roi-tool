@@ -154,6 +154,9 @@ Key points for non-programmers:
   multiple channels.
 - Tables and plots only include the selected channel(s), so the exported figures
   match the specified markers.
+- The LHX6 shortcut maps to the metadata label “Confocal - Green”; if your
+  projections use different channel names, supply them explicitly with repeated
+  `--channel` flags.
 - All derived artefacts live in
   `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/`:
   - `data/manifest.csv` - catalogue of every projection inspected.

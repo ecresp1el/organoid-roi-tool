@@ -44,7 +44,8 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
   mean).
 - Restrict calculations to the requested channel(s). The default configuration
   analyses the LHX6 channel (green in the metadata), but you can pass
-  `--channel` on the CLI to target other markers.
+  `--channel` on the CLI to target other markers. The `LHX6` shortcut maps to
+  the exported projection name “Confocal - Green”.
 - Summarise the WT vs KO comparison per projection type (max/mean/median) using
   both Welch t-tests and Mann-Whitney U tests so publication-ready statistics
   (`N`, group means/medians, SEM, confidence intervals, p-values) are saved for

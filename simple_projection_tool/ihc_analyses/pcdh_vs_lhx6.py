@@ -70,6 +70,18 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
     #: 95 percent confidence interval using the normal approximation.
     CONFIDENCE_Z = 1.96
 
+    #: Alias mapping from user-friendly handles (normalised) to projection names.
+    CHANNEL_ALIASES = {
+        "lhx6": (
+            "LHX6",
+            "Confocal - Green",
+            "Confocal_-_Green",
+            "confocal_-_green",
+            "confocal_green",
+            "green",
+        ),
+    }
+
     def __init__(
         self,
         base_path: Path | str,
@@ -80,14 +92,34 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
     ) -> None:
         """Default to the LHX6 channel unless overridden."""
 
-        if channel_filter is None:
-            channel_filter = ("LHX6",)
+        requested = tuple(channel_filter) if channel_filter is not None else ("LHX6",)
+        expanded = self._expand_channel_aliases(requested)
         super().__init__(
             base_path,
             projection_dir_name=projection_dir_name,
             output_dir=output_dir,
-            channel_filter=channel_filter,
+            channel_filter=expanded,
         )
+        # Preserve the user-requested names for logging/error messages.
+        self.channel_filter_names = requested
+
+    def _expand_channel_aliases(self, names: Sequence[str]) -> tuple[str, ...]:
+        """Return the union of names and any known aliases."""
+
+        expanded: list[str] = []
+        seen: set[str] = set()
+        for name in names:
+            if not name:
+                continue
+            if name not in seen:
+                expanded.append(name)
+                seen.add(name)
+            alias_key = self._normalise_channel_name(name)
+            for alias in self.CHANNEL_ALIASES.get(alias_key, ()):
+                if alias not in seen:
+                    expanded.append(alias)
+                    seen.add(alias)
+        return tuple(expanded)
 
     def import_data(self) -> pd.DataFrame:
         """Catalogue the TIFF files that will be processed."""
@@ -98,6 +130,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
             )
 
         records: List[ProjectionRecord] = []
+        discovered_channels: set[str] = set()
         for run_folder in sorted(
             path for path in self.projection_root.iterdir() if path.is_dir()
         ):
@@ -114,6 +147,8 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 if projection_type is None:
                     continue
                 channel = self._extract_channel_name(tif_path.name)
+                # Track all discovered channels for better error messages.
+                discovered_channels.add(channel)
                 if not self._channel_is_selected(channel):
                     continue
                 records.append(
@@ -128,11 +163,12 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
 
         if not records:
             selected = (
-                ", ".join(self.channel_filter_names) or "the specified channels"
+                ", ".join(self.channel_filter_names) if self.channel_filter_names else "the specified channels"
             )
+            available = ", ".join(sorted(discovered_channels)) or "none"
             raise FileNotFoundError(
                 f"No projection TIFFs were discovered in {self.projection_root} "
-                f"for channel selection: {selected}."
+                f"for channel selection: {selected}. Available channels: {available}."
             )
 
         manifest = pd.DataFrame(
