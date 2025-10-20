@@ -1,6 +1,6 @@
 # Simple Projection Export Tool
 
-This utility creates a standardised set of projections and visualisations for each Imaris `.ims` file in a folder. It lives in its own subdirectory (`simple_projection_tool/`) so it can evolve independently while still relying on the shared `imaris_tools` package in this repository (exposed here via a symlink).
+This utility creates a standardized set of projections and visualizations for each Imaris `.ims` file in a folder. It lives in its own subdirectory (`simple_projection_tool/`) so it can evolve independently while still relying on the shared `imaris_tools` package in this repository (exposed here via a symlink).
 
 ---
 
