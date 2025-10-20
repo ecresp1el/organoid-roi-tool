@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import abc
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence
 
 import pandas as pd
 
@@ -54,6 +54,7 @@ class ProjectionAnalysis(abc.ABC):
         *,
         projection_dir_name: str = "simple_projections",
         output_dir: Optional[Path | str] = None,
+        channel_filter: Optional[Sequence[str]] = None,
     ) -> None:
         """Set up common paths used by the analysis."""
 
@@ -76,6 +77,17 @@ class ProjectionAnalysis(abc.ABC):
         # finishes running.
         self.additional_tables: Dict[str, pd.DataFrame] = {}
 
+        # Restrict processing to a subset of channels when requested. Channel
+        # names are normalised to match the filenames produced by the projection
+        # export utility (case-insensitive, punctuation stripped).
+        self.channel_filter_names: tuple[str, ...] = tuple(channel_filter or ())
+        normalised = {
+            self._normalise_channel_name(name)
+            for name in self.channel_filter_names
+            if name
+        }
+        self.channel_filter: Optional[set[str]] = normalised or None
+
         # ``save_outputs`` and ``save_figure`` populate these lists so the CLI
         # can report exactly what was created during the run.
         self.saved_table_paths: list[Path] = []
@@ -97,6 +109,13 @@ class ProjectionAnalysis(abc.ABC):
         self.saved_table_paths.clear()
         self.saved_figure_paths.clear()
         self.additional_tables.clear()
+
+        if self.channel_filter_names:
+            print(
+                f"[{self.name}] Restricting to channels: "
+                f"{', '.join(self.channel_filter_names)}",
+                flush=True,
+            )
 
         print(f"[{self.name}] Importing projection manifest ...", flush=True)
         self.manifest = self.import_data()
@@ -234,3 +253,33 @@ class ProjectionAnalysis(abc.ABC):
         # Subclasses can override this to push data to collaborators or shared
         # drives. The default implementation intentionally does nothing.
         return None
+
+    # ------------------------------------------------------------------
+    # Channel helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalise_channel_name(name: str) -> str:
+        """Return a case-insensitive, sanitised channel identifier."""
+
+        cleaned = "".join(
+            char if char.isalnum() or char in {"-", "_"} else "_"
+            for char in name
+        )
+        cleaned = cleaned.strip("_.")
+        return cleaned.lower()
+
+    def _channel_is_selected(self, channel: str) -> bool:
+        """Return True when the supplied channel passes the filter."""
+
+        if self.channel_filter is None:
+            return True
+        return self._normalise_channel_name(channel) in self.channel_filter
+
+    def _filter_channels(self, channels: Iterable[str]) -> list[str]:
+        """Filter an iterable of channels using the current selection."""
+
+        return [
+            channel
+            for channel in channels
+            if self._channel_is_selected(channel)
+        ]

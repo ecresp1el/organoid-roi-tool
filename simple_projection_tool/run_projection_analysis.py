@@ -37,6 +37,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional directory to store manifests, processed data, and plots.",
     )
+    parser.add_argument(
+        "--channel",
+        dest="channels",
+        action="append",
+        default=None,
+        help=(
+            "Restrict the analysis to specific channel name(s). "
+            "Repeat the flag to include multiple channels. "
+            "Defaults are analysis-specific."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -46,6 +57,7 @@ def main() -> int:
     analysis = analysis_cls(
         base_path=args.base_path,
         output_dir=args.output_dir,
+        channel_filter=args.channels,
     )
     analysis.run()
 

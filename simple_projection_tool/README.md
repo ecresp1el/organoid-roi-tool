@@ -149,6 +149,11 @@ Key points for non-programmers:
 
 - The command above can be copied verbatim; change `--base-path` if the data
   live somewhere else.
+- The analysis defaults to the LHX6 channel (green in the Imaris metadata). Use
+  `--channel` to target a different channel, or repeat the flag to include
+  multiple channels.
+- Tables and plots only include the selected channel(s), so the exported figures
+  match the specified markers.
 - All derived artefacts live in
   `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/`:
   - `data/manifest.csv` - catalogue of every projection inspected.

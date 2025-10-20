@@ -42,6 +42,9 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
   compute descriptive statistics for every image (pixel count, mean, median,
   standard deviation, maximum, and a 95 percent confidence interval for the
   mean).
+- Restrict calculations to the requested channel(s). The default configuration
+  analyses the LHX6 channel (green in the metadata), but you can pass
+  `--channel` on the CLI to target other markers.
 - Summarise the WT vs KO comparison per projection type (max/mean/median) using
   both Welch t-tests and Mann-Whitney U tests so publication-ready statistics
   (`N`, group means/medians, SEM, confidence intervals, p-values) are saved for

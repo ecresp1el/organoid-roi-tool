@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,6 +27,7 @@ class ProjectionRecord:
     group: str
     sample_id: str
     projection_type: str
+    channel: str
     path: Path
 
 
@@ -44,23 +45,22 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
        descriptive statistics (mean, median, maximum, standard deviation, pixel
        count, and a 95 percent confidence interval for the mean).
     3. Summarising statistics across groups, including Welch t-tests and
-        Mann-Whitney U tests, so publication-ready values (``N``, means,
+       Mann-Whitney U tests, so publication-ready values (``N``, means,
        medians, confidence intervals, p-values) are readily available.
     4. Plotting group-level distributions using matched conventions (boxplots and
        mean plus/minus SEM bar charts saved as SVG and PNG with Arial text) to
        give imaging scientists an immediate visual comparison for each
        projection type.
 
-    All derived artefacts live beneath
-    ``<base_path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline`` to
-    reinforce their connection to this post-projection analysis layer.
+    By default the analysis restricts itself to the LHX6 channel (labelled green
+    in the Imaris metadata). Additional channel names can be supplied when
+    constructing the analysis or via the CLI ``--channel`` flag.
     """
 
     #: Folder-friendly identifier for this analysis.
     name = "PCDHvsLHX6_WTvsKO_IHC"
 
-    #: Expected suffixes (``_<suffix>.tif``) for the projection TIFFs. Keeping
-    #: them in one place allows scientists to add new projection styles later.
+    #: Expected suffixes (``_<suffix>.tif``) for the projection TIFFs.
     PROJECTION_SUFFIXES = {
         "max": "max",
         "mean": "mean",
@@ -69,6 +69,25 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
 
     #: 95 percent confidence interval using the normal approximation.
     CONFIDENCE_Z = 1.96
+
+    def __init__(
+        self,
+        base_path: Path | str,
+        *,
+        projection_dir_name: str = "simple_projections",
+        output_dir: Optional[Path | str] = None,
+        channel_filter: Optional[Sequence[str]] = None,
+    ) -> None:
+        """Default to the LHX6 channel unless overridden."""
+
+        if channel_filter is None:
+            channel_filter = ("LHX6",)
+        super().__init__(
+            base_path,
+            projection_dir_name=projection_dir_name,
+            output_dir=output_dir,
+            channel_filter=channel_filter,
+        )
 
     def import_data(self) -> pd.DataFrame:
         """Catalogue the TIFF files that will be processed."""
@@ -94,18 +113,26 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 projection_type = self._infer_projection_type(tif_path.name)
                 if projection_type is None:
                     continue
+                channel = self._extract_channel_name(tif_path.name)
+                if not self._channel_is_selected(channel):
+                    continue
                 records.append(
                     ProjectionRecord(
                         group=group,
                         sample_id=run_folder.name,
                         projection_type=projection_type,
+                        channel=channel,
                         path=tif_path,
                     )
                 )
 
         if not records:
+            selected = (
+                ", ".join(self.channel_filter_names) or "the specified channels"
+            )
             raise FileNotFoundError(
-                f"No projection TIFFs were discovered in {self.projection_root}."
+                f"No projection TIFFs were discovered in {self.projection_root} "
+                f"for channel selection: {selected}."
             )
 
         manifest = pd.DataFrame(
@@ -113,6 +140,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 "group": [record.group for record in records],
                 "sample_id": [record.sample_id for record in records],
                 "projection_type": [record.projection_type for record in records],
+                "channel": [record.channel for record in records],
                 "path": [record.path for record in records],
             }
         )
@@ -131,6 +159,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     "group": row.group,
                     "sample_id": row.sample_id,
                     "projection_type": row.projection_type,
+                    "channel": row.channel,
                     "path": str(path),
                     **stats,
                 }
@@ -151,22 +180,26 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         summary = self._summarise_groups(self.results)
         comparisons = self._compare_groups(self.results)
 
-        summary_projection_types = (
-            summary["projection_type"].nunique() if not summary.empty else 0
-        )
-        print(
-            f"[{self.name}]     compiled group summaries for {summary_projection_types} projection type(s).",
-            flush=True,
-        )
+        if summary.empty:
+            print(
+                f"[{self.name}]     group summaries are empty (no eligible projections).",
+                flush=True,
+            )
+        else:
+            summary_channels = ", ".join(sorted(summary["channel"].unique()))
+            print(
+                f"[{self.name}]     compiled group summaries for channel(s): {summary_channels}.",
+                flush=True,
+            )
         if comparisons.empty:
             print(
                 f"[{self.name}]     no group comparisons were produced (missing WT/KO pairs).",
                 flush=True,
             )
         else:
-            comparison_projection_types = comparisons["projection_type"].nunique()
+            comparison_channels = ", ".join(sorted(comparisons["channel"].unique()))
             print(
-                f"[{self.name}]     calculated statistical tests for {comparison_projection_types} projection type(s).",
+                f"[{self.name}]     calculated statistical tests for channel(s): {comparison_channels}.",
                 flush=True,
             )
 
@@ -186,25 +219,27 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         plt.rcParams["font.family"] = "Arial"
         plt.rcParams["svg.fonttype"] = "none"
 
-        for projection_type, projection_df in self.results.groupby("projection_type"):
-            figure = self._plot_projection_summary(projection_type, projection_df)
+        for (channel, projection_type), projection_df in self.results.groupby(
+            ["channel", "projection_type"]
+        ):
+            figure = self._plot_projection_summary(channel, projection_type, projection_df)
             if figure is None:
                 print(
-                    f"[{self.name}]     skipped plotting for {projection_type!r} (missing WT/KO data)",
+                    f"[{self.name}]     skipped plotting for {channel!r} / {projection_type!r} (missing WT/KO data)",
                     flush=True,
                 )
                 continue
             description = (
-                "Pixel mean distribution (box plus mean and SEM) for WT versus KO projections"
+                f"Pixel mean distribution (box plus mean and SEM) for WT versus KO projections [{channel}]"
             )
             metadata = {"Creator": self.name, "Description": description}
             self.save_figure(
                 figure,
-                f"{projection_type}_pixel_mean_summary",
+                f"{channel}_{projection_type}_pixel_mean_summary",
                 metadata=metadata,
             )
             print(
-                f"[{self.name}]     finished plotting pixel mean summary for {projection_type!r} projections.",
+                f"[{self.name}]     finished plotting pixel mean summary for {channel!r} / {projection_type!r} projections.",
                 flush=True,
             )
             plt.close(figure)
@@ -265,7 +300,9 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         """Aggregate per-image measurements into group-level summaries."""
 
         summaries: List[Dict[str, float | str | int]] = []
-        for projection_type, projection_df in results.groupby("projection_type"):
+        for (channel, projection_type), projection_df in results.groupby(
+            ["channel", "projection_type"]
+        ):
             for group, group_df in projection_df.groupby("group"):
                 pixel_means = group_df["pixel_mean"].astype(float).to_numpy()
                 pixel_medians = group_df["pixel_median"].astype(float).to_numpy()
@@ -282,6 +319,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                         "analysis": self.name,
                         "projection_type": projection_type,
                         "group": group,
+                        "channel": channel,
                         "n": n,
                         "pixel_mean_mean": mean_mean,
                         "pixel_mean_median": median_mean,
@@ -307,7 +345,9 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
             ) from exc
 
         comparisons: List[Dict[str, float | str | int]] = []
-        for projection_type, projection_df in results.groupby("projection_type"):
+        for (channel, projection_type), projection_df in results.groupby(
+            ["channel", "projection_type"]
+        ):
             wt_values = (
                 projection_df.loc[projection_df["group"] == "WT", "pixel_mean"]
                 .astype(float)
@@ -338,6 +378,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 {
                     "analysis": self.name,
                     "projection_type": projection_type,
+                    "channel": channel,
                     "metric": "pixel_mean",
                     "parametric_test": "Welch t-test",
                     "parametric_statistic": float(ttest.statistic),
@@ -360,10 +401,11 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
 
     def _plot_projection_summary(
         self,
+        channel: str,
         projection_type: str,
         projection_df: pd.DataFrame,
     ) -> Optional[plt.Figure]:
-        """Return a figure showing WT/KO intensity comparisons for one projection."""
+        """Return a figure showing WT/KO intensity comparisons for one channel."""
 
         groups = ["WT", "KO"]
         colors = {"WT": "#1f77b4", "KO": "#d62728"}
@@ -414,7 +456,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         axes[1].grid(axis="y", alpha=0.3)
 
         fig.suptitle(
-            f"WT vs KO pixel mean comparison - {projection_type.upper()} projection",
+            f"{channel} - WT vs KO pixel mean comparison ({projection_type.upper()} projection)",
             fontsize=14,
         )
         fig.tight_layout()
@@ -434,3 +476,13 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         standard_error = std / np.sqrt(count)
         margin = self.CONFIDENCE_Z * standard_error
         return (mean - margin, mean + margin)
+
+    @staticmethod
+    def _extract_channel_name(filename: str) -> str:
+        """Return the channel identifier encoded in a projection filename."""
+
+        stem = Path(filename).stem
+        if "_" not in stem:
+            return stem
+        channel, _suffix = stem.rsplit("_", 1)
+        return channel or stem
