@@ -48,25 +48,8 @@ def main() -> int:
         output_dir=args.output_dir,
     )
     analysis.run()
-    if analysis.saved_table_paths:
-        print("[outputs] Data tables:")
-        for path in analysis.saved_table_paths:
-            print(f"    • {path}")
-    else:
-        print("[outputs] No CSV tables were generated.")
-
-    if analysis.saved_figure_paths:
-        print("[outputs] Figures:")
-        for path in analysis.saved_figure_paths:
-            print(f"    • {path}")
-    else:
-        print("[outputs] No figures were generated.")
-
     print(
-        "[done] {name} analysis complete. Data and plots are under {pipeline}.".format(
-            name=analysis.name,
-            pipeline=analysis.pipeline_dir,
-        )
+        f"[done] {analysis.name} analysis complete. Results written to {analysis.output_dir}."
     )
     return 0
 

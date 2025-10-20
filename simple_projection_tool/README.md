@@ -129,11 +129,10 @@ Channel names are pulled from the Imaris metadata, sanitised for filesystem safe
 
 The projection exports can now feed into reproducible analysis objects stored in
 [`ihc_analyses/`](./ihc_analyses/).  Each object corresponds to one biological
-question and follows the same structure (`import_data → process_data →
-run_statistics → generate_plots → save`).  The first example,
-`PCDHvsLHX6_WTvsKO_IHC`, demonstrates how to classify WT vs KO folders, compute
-descriptive statistics from the 16-bit TIFFs, compare the groups with parametric
-and non-parametric tests, and export ready-to-plot tables and figures.
+question and follows the same structure (`import_data → process_data → save`).
+The first example, `PCDHvsLHX6_WTvsKO_IHC`, demonstrates how to classify WT vs
+KO folders, compute descriptive statistics from the 16-bit TIFFs, and save the
+results for downstream interpretation.
 
 To run the analysis from a terminal:
 
@@ -149,22 +148,9 @@ Key points for non-programmers:
 
 - The command above can be copied verbatim; change `--base-path` if the data
   live somewhere else.
-- All derived artefacts live in
-  `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/`:
-  - `data/manifest.csv` – catalogue of every projection inspected.
-  - `data/results.csv` – per-image pixel statistics (pixel count, mean, median,
-    max, standard deviation, 95 % CI of the mean).
-  - `data/group_summary.csv` – WT/KO summary table with `N`, mean, median, SEM
-    and confidence intervals per projection type.
-  - `data/group_comparisons.csv` – Welch t-test and Mann–Whitney U outcomes with
-    statistics and p-values for each projection type.
-- The console output now prints each processing stage (import, process, stats,
-  plotting, saving) and lists every CSV/figure written so you can verify the
-  run immediately.
-- `figures/` – paired boxplots + mean±SEM charts (SVG and 300 dpi PNG) using
-  Arial fonts so the annotations remain editable in Illustrator.
+- Output tables are written to
+  `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/` with clear filenames
+  (`manifest.csv` and `results.csv`).
 - To build a new analysis, copy the template described in
   [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in
   `ihc_analyses/__init__.py`.
-- Statistical tests use `scipy`; install it in the same environment if it is not
-  already available.
