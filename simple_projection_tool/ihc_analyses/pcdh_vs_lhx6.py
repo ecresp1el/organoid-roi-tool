@@ -136,6 +136,55 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         self.channel_filter_names = requested
         self._configure_pipeline_dirs()
 
+    def run(self) -> None:
+        """Execute the analysis for each requested channel independently."""
+
+        unique_channels: list[str] = []
+        seen: set[str] = set()
+        for name in self.channel_filter_names:
+            key = self._normalise_channel_name(name)
+            if key not in seen:
+                unique_channels.append(name)
+                seen.add(key)
+
+        if len(unique_channels) <= 1:
+            super().run()
+            return
+
+        original_names = self.channel_filter_names
+        original_filter = self.channel_filter.copy() if self.channel_filter else None
+        aggregated_tables: list[Path] = []
+        aggregated_figures: list[Path] = []
+
+        for name in unique_channels:
+            aliases = self._expand_channel_aliases((name,))
+            channel_filter_set = {
+                self._normalise_channel_name(alias) for alias in aliases if alias
+            }
+            self.channel_filter_names = (name,)
+            self.channel_filter = channel_filter_set or None
+            self._configure_pipeline_dirs()
+            print(
+                f"[{self.name}] ============================== channel {name} ==============================",
+                flush=True,
+            )
+            try:
+                super().run()
+            except FileNotFoundError as exc:
+                print(f"[{self.name}]     Skipping channel {name}: {exc}", flush=True)
+                continue
+
+            aggregated_tables.extend(self.saved_table_paths)
+            aggregated_figures.extend(self.saved_figure_paths)
+
+        self.channel_filter_names = original_names
+        self.channel_filter = original_filter
+        self._configure_pipeline_dirs()
+        # Point callers at the pipeline root which now contains per-channel subdirectories.
+        self.pipeline_dir = getattr(self, "pipeline_root", self.pipeline_dir)
+        self.saved_table_paths = aggregated_tables
+        self.saved_figure_paths = aggregated_figures
+
     def _expand_channel_aliases(self, names: Sequence[str]) -> tuple[str, ...]:
         """Return the union of names and any known aliases."""
 
