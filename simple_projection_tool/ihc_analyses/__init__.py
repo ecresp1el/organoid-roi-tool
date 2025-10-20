@@ -8,14 +8,17 @@ analysis by name.
 
 from .base import ProjectionAnalysis
 from .pcdh_vs_lhx6 import PCDHvsLHX6_WTvsKOIHCAnalysis
+from .nestin_vs_dcx import NestinvsDcx_WTvsKOIHCAnalysis
 
 ANALYSIS_REGISTRY = {
     "PCDHvsLHX6_WTvsKO_IHC": PCDHvsLHX6_WTvsKOIHCAnalysis,
+    "NestinvsDcx_WTvsKO_IHC": NestinvsDcx_WTvsKOIHCAnalysis,
     # Future analyses can be added here, e.g. "NewQuestion": NewAnalysisClass,
 }
 
 __all__ = [
     "ProjectionAnalysis",
     "PCDHvsLHX6_WTvsKOIHCAnalysis",
+    "NestinvsDcx_WTvsKOIHCAnalysis",
     "ANALYSIS_REGISTRY",
 ]

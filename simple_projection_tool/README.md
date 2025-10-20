@@ -181,8 +181,26 @@ Key points for non-programmers:
   using Arial fonts so the annotations remain editable in Illustrator. Each plot
   overlays the per-image data points on top of the boxplot so the distribution is
   visible.
+- Statistical tests use `scipy`; install it in the same environment if it is not
+  already available.
+
+To process the Nestin/DCX dataset:
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
+python simple_projection_tool/run_projection_analysis.py \
+    NestinvsDcx_WTvsKO_IHC \
+    --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt
+```
+
+- Defaults analyse Nestin (Confocal - Green, 529 nm), DCX (Confocal - Far red, 700 nm),
+  and PCDH19 (Confocal - Red, 600 nm). Each channel runs independently and writes to
+  its own subdirectory under
+  `<base-path>/analysis_results/NestinvsDcx_WTvsKO_IHC/analysis_pipeline/<channel-slug>/`.
+- Output tables include the same channel metadata columns and inferred `subject_label`
+  so sex/cohort information stays attached to every measurement.
+
 - To build a new analysis, copy the template described in
   [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in
   `ihc_analyses/__init__.py`.
-- Statistical tests use `scipy`; install it in the same environment if it is not
-  already available.

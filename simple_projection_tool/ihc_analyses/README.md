@@ -69,6 +69,22 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
 Use this file as a template for future biological questions - copy it, update the
 naming rules and statistics, and register the new class in `__init__.py`.
 
+### `NestinvsDcx_WTvsKO_IHC`
+
+*Location:* [`nestin_vs_dcx.py`](./nestin_vs_dcx.py)
+
+This analysis mirrors the structure above but targets the Nestin/DCX cohort.
+
+- Default channels: Nestin (Confocal - Green, 529 nm), DCX (Confocal - Far red,
+  700 nm), and PCDH19 (Confocal - Red, 600 nm). Each channel runs independently
+  and writes to its own `analysis_pipeline/<channel-slug>/` folder so figures
+  and tables stay separated.
+- Outputs include the same per-image statistics, WT vs KO comparisons, and
+  statistical tests, annotated with marker metadata and inferred `subject_label`
+  values.
+- Recommended base path:
+  `/Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt`.
+
 ### Pixel handling cheat-sheet for imaging scientists
 
 - Each projection TIFF is read exactly as exported (unsigned 16-bit). The
