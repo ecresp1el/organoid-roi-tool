@@ -122,3 +122,46 @@ Channel names are pulled from the Imaris metadata, sanitised for filesystem safe
 - Outputs grouped by input filename.
 - Scaling strategies documented in both the README and the per-folder manifest.
 - No destructive operations: the script only reads `.ims` files and writes to `simple_projections/`.
+
+---
+
+## 7. Post-processing analyses (PCDH19/LHX6 example)
+
+The projection exports can now feed into reproducible analysis objects stored in
+[`ihc_analyses/`](./ihc_analyses/).  Each object corresponds to one biological
+question and follows the same structure (`import_data → process_data →
+run_statistics → generate_plots → save`).  The first example,
+`PCDHvsLHX6_WTvsKO_IHC`, demonstrates how to classify WT vs KO folders, compute
+descriptive statistics from the 16-bit TIFFs, compare the groups with parametric
+and non-parametric tests, and export ready-to-plot tables and figures.
+
+To run the analysis from a terminal:
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
+python simple_projection_tool/run_projection_analysis.py \
+    PCDHvsLHX6_WTvsKO_IHC \
+    --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder
+```
+
+Key points for non-programmers:
+
+- The command above can be copied verbatim; change `--base-path` if the data
+  live somewhere else.
+- All derived artefacts live in
+  `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/`:
+  - `data/manifest.csv` – catalogue of every projection inspected.
+  - `data/results.csv` – per-image pixel statistics (pixel count, mean, median,
+    max, standard deviation, 95 % CI of the mean).
+  - `data/group_summary.csv` – WT/KO summary table with `N`, mean, median, SEM
+    and confidence intervals per projection type.
+  - `data/group_comparisons.csv` – Welch t-test and Mann–Whitney U outcomes with
+    statistics and p-values for each projection type.
+  - `figures/` – paired boxplots + mean±SEM charts (SVG and 300 dpi PNG) using
+    Arial fonts so the annotations remain editable in Illustrator.
+- To build a new analysis, copy the template described in
+  [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in
+  `ihc_analyses/__init__.py`.
+- Statistical tests use `scipy`; install it in the same environment if it is not
+  already available.
