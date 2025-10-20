@@ -15,7 +15,11 @@ DEFAULT_BASE_PATH = Path(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run post-projection analyses on simple projection outputs.",
+        description=(
+            "Run post-projection analyses on simple projection outputs. "
+            "If the required simple_projections folder is missing, the script "
+            "automatically launches simple_channel_projections first."
+        ),
     )
     parser.add_argument(
         "analysis",

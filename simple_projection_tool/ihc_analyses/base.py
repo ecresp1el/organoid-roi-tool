@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import abc
 from pathlib import Path
+import subprocess
+import sys
 from typing import Dict, Iterable, Optional, Sequence
 
 import pandas as pd
@@ -116,6 +118,8 @@ class ProjectionAnalysis(abc.ABC):
                 f"{', '.join(self.channel_filter_names)}",
                 flush=True,
             )
+
+        self._ensure_projection_exports()
 
         print(f"[{self.name}] Importing projection manifest ...", flush=True)
         self.manifest = self.import_data()
@@ -289,6 +293,53 @@ class ProjectionAnalysis(abc.ABC):
             for channel in channels
             if self._channel_is_selected(channel)
         ]
+
+    def _ensure_projection_exports(self) -> None:
+        """Verify projection exports exist; run the generator when missing."""
+
+        if not self.base_path.exists():
+            raise FileNotFoundError(f"Base path {self.base_path} does not exist.")
+
+        if self.projection_root.exists() and any(self.projection_root.iterdir()):
+            print(
+                f"[{self.name}] Found existing simple projections in {self.projection_root}.",
+                flush=True,
+            )
+            return
+
+        print(
+            f"[{self.name}] No projections detected in {self.projection_root}.",
+            flush=True,
+        )
+        script_path = Path(__file__).resolve().parent.parent / "simple_channel_projections.py"
+        if not script_path.exists():
+            raise FileNotFoundError(
+                f"Projection generator script {script_path} is missing."
+            )
+
+        cmd = [
+            sys.executable,
+            str(script_path),
+            "--source",
+            str(self.base_path),
+        ]
+        print(
+            f"[{self.name}] Launching simple_channel_projections to build exports...",
+            flush=True,
+        )
+        result = subprocess.run(cmd, check=False)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"simple_channel_projections failed with exit code {result.returncode}."
+            )
+        if not self.projection_root.exists() or not any(self.projection_root.iterdir()):
+            raise FileNotFoundError(
+                f"Projection generator completed but {self.projection_root} is still missing."
+            )
+        print(
+            f"[{self.name}] simple_channel_projections completed; projections ready in {self.projection_root}.",
+            flush=True,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

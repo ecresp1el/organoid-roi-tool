@@ -79,6 +79,12 @@ Options:
 
 You can invoke the script from any working directory as long as the repository is accessible and the Conda environment is active. The examples above show the exact commands tested in February 2025; replicate them verbatim to reproduce the results.
 
+> **Note:** The downstream `run_projection_analysis.py` helper automatically
+> runs `simple_channel_projections.py` if it detects that
+> `<base-path>/simple_projections/` is missing. You can still invoke the
+> projection exporter manually (recommended when you want to reuse the exports),
+> but it is no longer a hard prerequisite before launching an analysis.
+
 ---
 
 ## 4. Output layout
@@ -177,6 +183,8 @@ Key points for non-programmers:
 - The console output now prints each processing stage (import, process,
   statistics, plotting, saving) and lists every CSV or figure written so you can
   verify the run immediately.
+- If `<base-path>/simple_projections/` is missing, the CLI triggers
+  `simple_channel_projections.py` automatically before analysing.
 - `figures/` - paired boxplots plus mean+/-SEM charts (SVG and 300 dpi PNG)
   using Arial fonts so the annotations remain editable in Illustrator. Each plot
   overlays the per-image data points on top of the boxplot so the distribution is
@@ -200,6 +208,10 @@ python simple_projection_tool/run_projection_analysis.py \
   `<base-path>/analysis_results/NestinvsDcx_WTvsKO_IHC/analysis_pipeline/<channel-slug>/`.
 - Output tables include the same channel metadata columns and inferred `subject_label`
   so sex/cohort information stays attached to every measurement.
+- Missing projections in `<base-path>/simple_projections/` are generated on the fly
+  before any analysis starts.
+- If a requested channel is absent in the dataset, the CLI prints a skip message
+  and continues with the remaining markers.
 
 - To build a new analysis, copy the template described in
   [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in

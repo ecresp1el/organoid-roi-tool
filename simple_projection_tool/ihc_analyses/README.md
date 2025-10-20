@@ -14,7 +14,10 @@ it with minimal Python knowledge. The common structure comes from
 6. **Export** - push data somewhere else (shared drive, email, etc.).
 
 The `ProjectionAnalysis` base class handles orchestration and saving, so each
-new analysis only needs to focus on the biological logic.
+new analysis only needs to focus on the biological logic. When a run begins the
+base class checks for `<base-path>/simple_projections/` and automatically
+invokes `simple_channel_projections.py` if the exports are missing, ensuring the
+post-processing step always has source data to consume.
 
 All derivative artefacts (CSV tables and figures) are saved in a dedicated
 `analysis_pipeline/` folder inside each analysis output directory. This makes it
@@ -62,6 +65,8 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
   (`F`/`M`), alongside `channel`, `channel_canonical`, `channel_marker`, and
   `channel_wavelength_nm` columns in every table so downstream comparisons
   between cohorts and markers remain traceable.
+- Automatically launches `simple_channel_projections.py` when the required
+  exports are absent so the analysis can run from a clean data directory.
 - Statistical testing relies on `scipy` (Welch t-tests and Mann-Whitney U). If
   the module is missing, install it in the Conda environment used for the
   analysis.
@@ -82,8 +87,12 @@ This analysis mirrors the structure above but targets the Nestin/DCX cohort.
 - Outputs include the same per-image statistics, WT vs KO comparisons, and
   statistical tests, annotated with marker metadata and inferred `subject_label`
   values.
+- Automatically calls `simple_channel_projections.py` if the simple projections
+  folder is absent before analysis begins.
 - Recommended base path:
   `/Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt`.
+- Channels that are not present in the dataset are skipped with a console
+  message so you can confirm which markers were processed.
 
 ### Pixel handling cheat-sheet for imaging scientists
 
