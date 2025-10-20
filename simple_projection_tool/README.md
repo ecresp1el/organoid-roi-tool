@@ -122,3 +122,35 @@ Channel names are pulled from the Imaris metadata, sanitised for filesystem safe
 - Outputs grouped by input filename.
 - Scaling strategies documented in both the README and the per-folder manifest.
 - No destructive operations: the script only reads `.ims` files and writes to `simple_projections/`.
+
+---
+
+## 7. Post-processing analyses (PCDH19/LHX6 example)
+
+The projection exports can now feed into reproducible analysis objects stored in
+[`ihc_analyses/`](./ihc_analyses/).  Each object corresponds to one biological
+question and follows the same structure (`import_data → process_data → save`).
+The first example, `PCDHvsLHX6_WTvsKO_IHC`, demonstrates how to classify WT vs
+KO folders, compute descriptive statistics from the 16-bit TIFFs, and save the
+results for downstream interpretation.
+
+To run the analysis from a terminal:
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
+python simple_projection_tool/run_projection_analysis.py \
+    PCDHvsLHX6_WTvsKO_IHC \
+    --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder
+```
+
+Key points for non-programmers:
+
+- The command above can be copied verbatim; change `--base-path` if the data
+  live somewhere else.
+- Output tables are written to
+  `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/` with clear filenames
+  (`manifest.csv` and `results.csv`).
+- To build a new analysis, copy the template described in
+  [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in
+  `ihc_analyses/__init__.py`.
