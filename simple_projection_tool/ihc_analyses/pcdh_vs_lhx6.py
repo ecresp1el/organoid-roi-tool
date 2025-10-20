@@ -28,6 +28,10 @@ class ProjectionRecord:
     sample_id: str
     projection_type: str
     channel: str
+    channel_canonical: str
+    channel_marker: str
+    channel_wavelength_nm: Optional[float]
+    subject_label: Optional[str]
     path: Path
 
 
@@ -40,21 +44,22 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
        determining whether each file belongs to the wild-type (``WT``) or
        knockout (``KO``) group based on the folder name (``IGI`` = WT,
        ``IGIKO`` = KO).
-    2. Processing every 16-bit projection by loading the pixels into
-       floating-point arrays (no scaling is applied) and computing per-image
-       descriptive statistics (mean, median, maximum, standard deviation, pixel
-       count, and a 95 percent confidence interval for the mean).
+    2. Processing every projection by loading the pixels into floating-point
+       arrays (no scaling is applied) and computing per-image descriptive
+       statistics (mean, median, maximum, standard deviation, pixel count, and a
+       95 percent confidence interval for the mean).
     3. Summarising statistics across groups, including Welch t-tests and
-       Mann-Whitney U tests, so publication-ready values (``N``, means,
-       medians, confidence intervals, p-values) are readily available.
-    4. Plotting group-level distributions using matched conventions (boxplots and
-       mean plus/minus SEM bar charts saved as SVG and PNG with Arial text) to
-       give imaging scientists an immediate visual comparison for each
-       projection type.
+       Mann-Whitney U tests, so publication-ready values (``N``, means, medians,
+       confidence intervals, p-values) are readily available.
+    4. Plotting group-level distributions using matched conventions (boxplots
+       with point overlays plus mean±SEM bar charts saved as SVG and PNG with
+       Arial text) to give imaging scientists an immediate visual comparison for
+       each projection type.
 
-    By default the analysis restricts itself to the LHX6 channel (labelled green
-    in the Imaris metadata). Additional channel names can be supplied when
-    constructing the analysis or via the CLI ``--channel`` flag.
+    By default the analysis processes both the LHX6 marker (Confocal - Green,
+    529 nm) and the PCDH19 marker (Confocal - Red, 600 nm). Additional channel
+    names can be supplied when constructing the analysis or via the CLI
+    ``--channel`` flag.
     """
 
     #: Folder-friendly identifier for this analysis.
@@ -80,6 +85,28 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
             "confocal_green",
             "green",
         ),
+        "pcdh19": (
+            "PCDH19",
+            "Confocal - Red",
+            "Confocal_-_Red",
+            "confocal_-_red",
+            "confocal_red",
+            "red",
+        ),
+    }
+
+    #: Canonical metadata for channels referenced by the aliases above.
+    CHANNEL_METADATA = {
+        "lhx6": {
+            "marker": "LHX6",
+            "canonical_name": "Confocal - Green",
+            "wavelength_nm": 529.0,
+        },
+        "pcdh19": {
+            "marker": "PCDH19",
+            "canonical_name": "Confocal - Red",
+            "wavelength_nm": 600.0,
+        },
     }
 
     def __init__(
@@ -90,9 +117,13 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         output_dir: Optional[Path | str] = None,
         channel_filter: Optional[Sequence[str]] = None,
     ) -> None:
-        """Default to the LHX6 channel unless overridden."""
+        """Default to both the LHX6 (green) and PCDH19 (red) channels."""
 
-        requested = tuple(channel_filter) if channel_filter is not None else ("LHX6",)
+        requested = (
+            tuple(channel_filter)
+            if channel_filter is not None
+            else ("LHX6", "PCDH19")
+        )
         expanded = self._expand_channel_aliases(requested)
         super().__init__(
             base_path,
@@ -100,7 +131,8 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
             output_dir=output_dir,
             channel_filter=expanded,
         )
-        # Preserve the user-requested names for logging/error messages.
+        # Preserve the user-requested names for logging/error messages and set
+        # up channel-specific pipeline directories.
         self.channel_filter_names = requested
         self._configure_pipeline_dirs()
 
@@ -138,6 +170,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
             group = self._infer_group(run_folder.name)
             if group is None:
                 continue
+            subject_label = self._infer_subject_label(run_folder.name)
 
             projections_dir = run_folder / "16bit"
             if not projections_dir.exists():
@@ -148,23 +181,30 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 if projection_type is None:
                     continue
                 channel = self._extract_channel_name(tif_path.name)
-                # Track all discovered channels for better error messages.
                 discovered_channels.add(channel)
                 if not self._channel_is_selected(channel):
                     continue
+                canonical_key = self._canonical_channel_key(channel)
+                metadata = self.CHANNEL_METADATA.get(canonical_key or "", {})
                 records.append(
                     ProjectionRecord(
                         group=group,
                         sample_id=run_folder.name,
                         projection_type=projection_type,
                         channel=channel,
+                        channel_canonical=metadata.get("canonical_name", channel),
+                        channel_marker=metadata.get("marker", canonical_key or channel),
+                        channel_wavelength_nm=metadata.get("wavelength_nm"),
+                        subject_label=subject_label,
                         path=tif_path,
                     )
                 )
 
         if not records:
             selected = (
-                ", ".join(self.channel_filter_names) if self.channel_filter_names else "the specified channels"
+                ", ".join(self.channel_filter_names)
+                if self.channel_filter_names
+                else "the specified channels"
             )
             available = ", ".join(sorted(discovered_channels)) or "none"
             raise FileNotFoundError(
@@ -178,6 +218,10 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 "sample_id": [record.sample_id for record in records],
                 "projection_type": [record.projection_type for record in records],
                 "channel": [record.channel for record in records],
+                "channel_canonical": [record.channel_canonical for record in records],
+                "channel_marker": [record.channel_marker for record in records],
+                "channel_wavelength_nm": [record.channel_wavelength_nm for record in records],
+                "subject_label": [record.subject_label for record in records],
                 "path": [record.path for record in records],
             }
         )
@@ -197,6 +241,10 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     "sample_id": row.sample_id,
                     "projection_type": row.projection_type,
                     "channel": row.channel,
+                    "channel_canonical": row.channel_canonical,
+                    "channel_marker": row.channel_marker,
+                    "channel_wavelength_nm": row.channel_wavelength_nm,
+                    "subject_label": row.subject_label,
                     "path": str(path),
                     **stats,
                 }
@@ -223,9 +271,9 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 flush=True,
             )
         else:
-            summary_channels = ", ".join(sorted(summary["channel"].unique()))
+            summary_channels = ", ".join(sorted(summary["channel_canonical"].unique()))
             print(
-                f"[{self.name}]     compiled group summaries for channel(s): {summary_channels}.",
+                f"[{self.name}]     compiled WT vs KO summaries per projection type for channel(s): {summary_channels}.",
                 flush=True,
             )
         if comparisons.empty:
@@ -234,9 +282,9 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 flush=True,
             )
         else:
-            comparison_channels = ", ".join(sorted(comparisons["channel"].unique()))
+            comparison_channels = ", ".join(sorted(comparisons["channel_canonical"].unique()))
             print(
-                f"[{self.name}]     calculated statistical tests for channel(s): {comparison_channels}.",
+                f"[{self.name}]     calculated WT vs KO statistical tests per projection type for channel(s): {comparison_channels}.",
                 flush=True,
             )
 
@@ -266,10 +314,21 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     flush=True,
                 )
                 continue
+
             description = (
-                f"Pixel mean distribution (box plus mean and SEM) for WT versus KO projections [{channel}]"
+                "Pixel mean distribution (box plus mean and SEM) for WT versus KO projections "
+                f"[{projection_df['channel_marker'].iloc[0]} – {projection_df['channel_canonical'].iloc[0]}]"
             )
-            metadata = {"Creator": self.name, "Description": description}
+            metadata = {
+                "Creator": self.name,
+                "Description": description,
+                "Channel": projection_df["channel_canonical"].iloc[0],
+                "Marker": projection_df["channel_marker"].iloc[0],
+            }
+            wavelength = projection_df["channel_wavelength_nm"].dropna().unique()
+            if wavelength.size == 1:
+                metadata["Wavelength_nm"] = f"{float(wavelength[0]):.1f}"
+
             self.save_figure(
                 figure,
                 f"{channel}_{projection_type}_pixel_mean_summary",
@@ -340,7 +399,11 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         for (channel, projection_type), projection_df in results.groupby(
             ["channel", "projection_type"]
         ):
+            meta_row = projection_df.iloc[0]
             for group, group_df in projection_df.groupby("group"):
+                subject_labels = sorted(
+                    {label for label in group_df["subject_label"].dropna().astype(str)}
+                )
                 pixel_means = group_df["pixel_mean"].astype(float).to_numpy()
                 pixel_medians = group_df["pixel_median"].astype(float).to_numpy()
                 n = int(pixel_means.size)
@@ -357,7 +420,11 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                         "projection_type": projection_type,
                         "group": group,
                         "channel": channel,
+                        "channel_canonical": meta_row.get("channel_canonical", channel),
+                        "channel_marker": meta_row.get("channel_marker", channel),
+                        "channel_wavelength_nm": meta_row.get("channel_wavelength_nm"),
                         "n": n,
+                        "subject_labels": ";".join(subject_labels) if subject_labels else "",
                         "pixel_mean_mean": mean_mean,
                         "pixel_mean_median": median_mean,
                         "pixel_mean_std": std_mean,
@@ -385,6 +452,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         for (channel, projection_type), projection_df in results.groupby(
             ["channel", "projection_type"]
         ):
+            meta_row = projection_df.iloc[0]
             wt_values = (
                 projection_df.loc[projection_df["group"] == "WT", "pixel_mean"]
                 .astype(float)
@@ -416,6 +484,9 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     "analysis": self.name,
                     "projection_type": projection_type,
                     "channel": channel,
+                    "channel_canonical": meta_row.get("channel_canonical", channel),
+                    "channel_marker": meta_row.get("channel_marker", channel),
+                    "channel_wavelength_nm": meta_row.get("channel_wavelength_nm"),
                     "metric": "pixel_mean",
                     "parametric_test": "Welch t-test",
                     "parametric_statistic": float(ttest.statistic),
@@ -431,6 +502,11 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     "ko_median": float(np.median(ko_values)),
                     "wt_sem": _sem(wt_values),
                     "ko_sem": _sem(ko_values),
+                    "subject_labels": ";".join(
+                        sorted(
+                            {label for label in projection_df["subject_label"].dropna().astype(str)}
+                        )
+                    ),
                 }
             )
 
@@ -476,13 +552,10 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         scatter_x: list[float] = []
         scatter_y: list[float] = []
         for idx, arr in enumerate(values, start=1):
-            arr = arr.astype(float)
             if arr.size == 0:
                 continue
-            if arr.size == 1:
-                jitter = np.array([0.0])
-            else:
-                jitter = np.linspace(-0.12, 0.12, arr.size)
+            arr = arr.astype(float)
+            jitter = np.linspace(-0.12, 0.12, arr.size) if arr.size > 1 else np.array([0.0])
             scatter_x.extend((idx + jitter).tolist())
             scatter_y.extend(arr.tolist())
         if scatter_x:
@@ -517,7 +590,8 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         axes[1].grid(axis="y", alpha=0.3)
 
         fig.suptitle(
-            f"{channel} - WT vs KO pixel mean comparison ({projection_type.upper()} projection)",
+            f"{projection_df['channel_marker'].iloc[0]} – WT vs KO pixel mean comparison "
+            f"({projection_type.upper()} projection)",
             fontsize=14,
         )
         fig.tight_layout()
@@ -547,3 +621,29 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
             return stem
         channel, _suffix = stem.rsplit("_", 1)
         return channel or stem
+
+    @staticmethod
+    def _infer_subject_label(folder_name: str) -> Optional[str]:
+        """Attempt to extract a subject/sex label (e.g. F/M) from the folder name."""
+
+        import re
+
+        tokens = [token for token in re.split(r"[^A-Za-z0-9]+", folder_name.upper()) if token]
+        if any(token in {"F", "FEMALE", "FEM"} for token in tokens):
+            return "F"
+        if any(token in {"M", "MALE"} for token in tokens):
+            return "M"
+        return None
+
+    def _canonical_channel_key(self, channel: str) -> Optional[str]:
+        """Map a channel string to a canonical metadata key."""
+
+        normalised = self._normalise_channel_name(channel)
+        for canonical, aliases in self.CHANNEL_ALIASES.items():
+            alias_set = {self._normalise_channel_name(alias) for alias in aliases}
+            alias_set.add(canonical)
+            if normalised in alias_set:
+                return canonical
+        if normalised in self.CHANNEL_METADATA:
+            return normalised
+        return None

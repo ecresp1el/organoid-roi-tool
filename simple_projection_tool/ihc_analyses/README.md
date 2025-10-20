@@ -43,9 +43,10 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
   standard deviation, maximum, and a 95 percent confidence interval for the
   mean).
 - Restrict calculations to the requested channel(s). The default configuration
-  analyses the LHX6 channel (green in the metadata), but you can pass
-  `--channel` on the CLI to target other markers. The `LHX6` shortcut maps to
-  the exported projection name “Confocal - Green”.
+  processes both markers: LHX6 (Confocal - Green, 529 nm) and PCDH19 (Confocal -
+  Red, 600 nm). Use `--channel` on the CLI to narrow or extend the selection.
+  The `LHX6` shortcut maps to “Confocal - Green” and `PCDH19` maps to
+  “Confocal - Red”.
 - Summarise the WT vs KO comparison per projection type (max/mean/median) using
   both Welch t-tests and Mann-Whitney U tests so publication-ready statistics
   (`N`, group means/medians, SEM, confidence intervals, p-values) are saved for
@@ -57,6 +58,10 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
 - Save the manifest, per-image results, grouped summaries, and hypothesis tests
   as CSV tables in `analysis_pipeline/<channel-slug>/data/` inside
   `<project>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/`.
+- Preserve the original run folder name and inferred `subject_label` token
+  (`F`/`M`), alongside `channel`, `channel_canonical`, `channel_marker`, and
+  `channel_wavelength_nm` columns in every table so downstream comparisons
+  between cohorts and markers remain traceable.
 - Statistical testing relies on `scipy` (Welch t-tests and Mann-Whitney U). If
   the module is missing, install it in the Conda environment used for the
   analysis.

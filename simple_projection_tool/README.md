@@ -149,14 +149,19 @@ Key points for non-programmers:
 
 - The command above can be copied verbatim; change `--base-path` if the data
   live somewhere else.
-- The analysis defaults to the LHX6 channel (green in the Imaris metadata). Use
-  `--channel` to target a different channel, or repeat the flag to include
-  multiple channels.
+- The analysis defaults to the paired markers: LHX6 (Confocal - Green, 529 nm)
+  and PCDH19 (Confocal - Red, 600 nm). Use `--channel` to narrow or extend the
+  selection.
 - Tables and plots only include the selected channel(s), so the exported figures
   match the specified markers.
 - The LHX6 shortcut maps to the metadata label “Confocal - Green”; if your
   projections use different channel names, supply them explicitly with repeated
   `--channel` flags.
+- `--channel PCDH19` targets the red channel (“Confocal - Red”, 600 nm) that pairs
+  with LHX6 in the experiment.
+- Every table carries `channel`, `channel_canonical`, `channel_marker`, and
+  `channel_wavelength_nm` columns so downstream analyses can verify the exact
+  imaging metadata alongside the measurements.
 - All derived artefacts live in
   `<base-path>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/<channel-slug>/`:
   - `data/manifest.csv` - catalogue of every projection inspected for the selected channel(s).
@@ -166,6 +171,9 @@ Key points for non-programmers:
     and confidence intervals per projection type.
   - `data/group_comparisons.csv` - Welch t-test and Mann-Whitney U outcomes with
     statistics and p-values for each projection type.
+- All tables carry the original run folder name (`sample_id`) and an inferred
+  `subject_label` token (`F`/`M`) so you can confirm which cohort each projection
+  belongs to when comparing datasets.
 - The console output now prints each processing stage (import, process,
   statistics, plotting, saving) and lists every CSV or figure written so you can
   verify the run immediately.
