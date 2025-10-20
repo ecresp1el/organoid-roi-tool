@@ -1,4 +1,18 @@
-"""CLI helper for launching immunohistochemistry projection analyses."""
+"""CLI helper for launching immunohistochemistry projection analyses.
+
+The command performs three high-level tasks:
+
+1. Validate that ``<base-path>/simple_projections`` exists. If it does not, the
+   helper transparently launches :mod:`simple_channel_projections` so downstream
+   analyses always have the required TIFF exports.
+2. Instantiate the requested analysis class from
+   :mod:`simple_projection_tool.ihc_analyses` and run it end-to-end.
+3. Print a human-readable summary of every CSV and figure generated during the
+   run so scientists can verify the outputs without digging through folders.
+
+The helper therefore provides a single command for both generating projections
+and executing domain-specific post-processing pipelines.
+"""
 
 from __future__ import annotations
 

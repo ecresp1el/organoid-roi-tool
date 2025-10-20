@@ -216,3 +216,20 @@ python simple_projection_tool/run_projection_analysis.py \
 - To build a new analysis, copy the template described in
   [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in
   `ihc_analyses/__init__.py`.
+
+### Developing additional analyses
+
+1. Duplicate one of the existing analysis modules in
+   `simple_projection_tool/ihc_analyses/` (for example
+   `pcdh_vs_lhx6.py`). Rename the class and update the module-level docstring to
+   describe the new experiment.
+2. Update ``CHANNEL_ALIASES`` and ``CHANNEL_METADATA`` so the CLI accepts the
+   markers you care about while CSV/figure outputs retain canonical metadata.
+3. Adapt helper functions such as ``_infer_group`` or ``_infer_projection_type``
+   if your folder structure differs. The remainder of the pipeline (manifest,
+   statistics, plotting) typically works unchanged.
+4. Register the new analysis in `ihc_analyses/__init__.py` by adding an entry to
+   ``ANALYSIS_REGISTRY``.
+5. Execute the analysis via ``run_projection_analysis.py``. The helper verifies
+   or regenerates projection exports, runs the analysis per channel, and prints
+   the generated artefacts so you can validate the results immediately.

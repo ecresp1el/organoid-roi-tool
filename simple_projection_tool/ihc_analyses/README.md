@@ -128,3 +128,16 @@ This analysis mirrors the structure above but targets the Nestin/DCX cohort.
 
 By following these steps every new biological question gains a reproducible
 pipeline with consistent folder structure and saved outputs.
+
+### Tips when creating new modules
+
+- Keep ``CHANNEL_ALIASES`` and ``CHANNEL_METADATA`` up to date so the command
+  line interface exposes friendly marker names while outputs retain canonical
+  metadata (marker, wavelength, etc.).
+- The base class already re-runs ``simple_channel_projections.py`` if the
+  projections are missing, so new analyses do not need bespoke setup code.
+- Reuse the per-channel execution pattern from the existing analyses when you
+  want independent outputs per marker.
+- Update docstrings at the top of each module to describe assumptions (dataset
+  layout, markers, aliases). Future contributors can then duplicate the file
+  and adjust it with minimal effort.

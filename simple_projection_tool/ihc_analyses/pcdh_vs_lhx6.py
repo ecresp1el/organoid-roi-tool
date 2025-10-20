@@ -1,9 +1,21 @@
 """WT vs KO projection analysis for the PCDH19/LHX6 immunostaining experiment.
 
-This module contains the first concrete example of how to extend the
-:mod:`ihc_analyses` framework. The analysis follows the structure laid out in
-:class:`~ihc_analyses.base.ProjectionAnalysis` and documents every step so the
-next biological question can reuse the pattern.
+Key implementation notes for scientists extending this module:
+
+* The analysis extends :class:`~ihc_analyses.base.ProjectionAnalysis`, so the
+  :meth:`run` method provided by the base class handles projection discovery,
+  optional statistics, plotting, and saving.
+* The base class ensures ``<base-path>/simple_projections`` exists. When the
+  folder is missing it automatically calls ``simple_channel_projections.py``,
+  meaning a single CLI command can regenerate projections and execute the
+  analysis.
+* Channel handling is driven by ``CHANNEL_ALIASES`` /
+  ``CHANNEL_METADATA``. Update these mappings when adding new markers so the CLI
+  can accept friendly names (e.g. ``--channel LHX6``) while preserving canonical
+  metadata in every CSV/figure.
+* The analysis writes outputs beneath
+  ``analysis_results/PCDHvsLHX6_WTvsKO_IHC/analysis_pipeline/<channel>/`` so
+  each marker retains its own data tables and plots.
 """
 
 from __future__ import annotations

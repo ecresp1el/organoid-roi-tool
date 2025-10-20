@@ -1,4 +1,19 @@
-"""WT vs KO projection analysis for the Nestin/DCX immunostaining experiment."""
+"""WT vs KO projection analysis for the Nestin/DCX immunostaining experiment.
+
+Design principles mirrored from ``pcdh_vs_lhx6`` so new analyses can be created
+quickly:
+
+* The base class verifies the presence of ``simple_projections`` and regenerates
+  them when needed, so the CLI remains a single turnkey command per dataset.
+* ``CHANNEL_ALIASES`` and ``CHANNEL_METADATA`` describe the markers available in
+  this analysis (Nestin, DCX, and optionally PCDH19). Adjust these dictionaries
+  when porting the template to new markers.
+* Each requested channel runs as an independent pass. Results land under
+  ``analysis_results/NestinvsDcx_WTvsKO_IHC/analysis_pipeline/<channel>/``
+  keeping figures and CSVs separated by marker.
+* The manifest/results tables include ``subject_label`` and channel metadata
+  columns so downstream comparisons retain both sex and marker context.
+"""
 
 from __future__ import annotations
 
