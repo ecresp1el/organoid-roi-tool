@@ -48,8 +48,26 @@ def main() -> int:
         output_dir=args.output_dir,
     )
     analysis.run()
+
+    saved_tables = getattr(analysis, "saved_table_paths", [])
+    if saved_tables:
+        print("[outputs] Data tables:")
+        for path in saved_tables:
+            print(f"    - {path}")
+    else:
+        print("[outputs] No CSV tables were generated.")
+
+    saved_figures = getattr(analysis, "saved_figure_paths", [])
+    if saved_figures:
+        print("[outputs] Figures:")
+        for path in saved_figures:
+            print(f"    - {path}")
+    else:
+        print("[outputs] No figures were generated.")
+
+    pipeline_dir = getattr(analysis, "pipeline_dir", analysis.output_dir)
     print(
-        f"[done] {analysis.name} analysis complete. Results written to {analysis.output_dir}."
+        f"[done] {analysis.name} analysis complete. Data and plots are under {pipeline_dir}."
     )
     return 0
 
