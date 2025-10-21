@@ -216,7 +216,100 @@ class ProjectionAnalysis(abc.ABC):
             ("ci_high", "CI high"),
         ]
 
-        for row in self.results.itertuples():
+        grouped = self.results.groupby(
+            ["sample_id", "channel", "channel_canonical", "channel_marker", "group"]
+        )
+
+        for (sample_id, channel, channel_canonical, channel_marker, group_value), group_df in grouped:
+            group_slug = self._slugify(str(group_value))
+            per_image_dir = self.figures_dir / "per_image_summaries" / group_slug
+            per_image_dir.mkdir(parents=True, exist_ok=True)
+
+            projections = {row.projection_type: row for row in group_df.itertuples()}
+
+            figure, axes = plt.subplots(2, 3, figsize=(12, 8), constrained_layout=True)
+            for col, projection_type in enumerate(["max", "mean", "median"]):
+                row_data = projections.get(projection_type)
+                ax_image = axes[0, col]
+                ax_stats = axes[1, col]
+
+                if row_data is None:
+                    ax_image.axis("off")
+                    ax_stats.axis("off")
+                    continue
+
+                image_path = Path(row_data.path)
+                if not image_path.exists():
+                    print(f"[{self.name}]     Skipping missing TIFF: {image_path}", flush=True)
+                    ax_image.axis("off")
+                    ax_stats.axis("off")
+                    continue
+
+                try:
+                    image = tiff.imread(image_path)
+                except Exception as exc:  # pragma: no cover - I/O dependent
+                    print(f"[{self.name}]     Failed to read {image_path}: {exc}", flush=True)
+                    ax_image.axis("off")
+                    ax_stats.axis("off")
+                    continue
+
+                if image.ndim != 2:
+                    image = np.squeeze(image)
+
+                vmin = float(np.percentile(image, 1.0))
+                vmax = float(np.percentile(image, 99.5))
+                if vmax <= vmin:
+                    vmin = float(np.min(image))
+                    vmax = float(np.max(image))
+
+                im = ax_image.imshow(image, cmap="gray", vmin=vmin, vmax=vmax)
+                ax_image.set_title(f"{projection_type.upper()} projection")
+                ax_image.set_xticks([])
+                ax_image.set_yticks([])
+                cbar = figure.colorbar(im, ax=ax_image, fraction=0.046, pad=0.04)
+                cbar.set_label("Pixel intensity")
+
+                stats_lines = [
+                    f"filename: {getattr(row_data, 'filename', image_path.name)}",
+                    f"display range: [{vmin:.2f}, {vmax:.2f}]",
+                ]
+                for column, label in stats_fields:
+                    value = getattr(row_data, column, None)
+                    if value is None or pd.isna(value):
+                        continue
+                    if isinstance(value, Number):
+                        stats_lines.append(f"{label}: {float(value):.3f}")
+                    else:
+                        stats_lines.append(f"{label}: {value}")
+
+                ax_stats.axis("off")
+                ax_stats.text(
+                    0.0,
+                    1.0,
+                    "\n".join(stats_lines),
+                    transform=ax_stats.transAxes,
+                    va="top",
+                    ha="left",
+                    fontsize=10,
+                    family="monospace",
+                )
+
+            filename_label = next(iter(group_df["filename"].tolist()), f"{sample_id}")
+            sample_slug = self._slugify(str(sample_id))
+            file_slug = self._slugify(Path(filename_label).stem)
+            stem = f"per_image_summaries/{group_slug}/{sample_slug}__{file_slug}"
+            metadata = {
+                "Creator": self.name,
+                "Description": (
+                    "Per-image summary combining max/mean/median projections with pixel statistics."
+                ),
+            }
+            self.save_figure(figure, stem, formats=("png", "svg"), dpi=150, metadata=metadata)
+            plt.close(figure)
+
+            saved_path_png = self.figures_dir / f"{stem}.png"
+            saved_path_svg = self.figures_dir / f"{stem}.svg"
+            self.per_image_summary_paths.extend([saved_path_png, saved_path_svg])
             image_path = Path(getattr(row, "path"))
             if not image_path.exists():
                 print(f"[{self.name}]     Skipping missing TIFF: {image_path}", flush=True)
