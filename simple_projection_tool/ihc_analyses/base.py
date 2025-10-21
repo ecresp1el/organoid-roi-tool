@@ -319,56 +319,6 @@ class ProjectionAnalysis(abc.ABC):
             saved_path_png = self.figures_dir / f"{stem}.png"
             saved_path_svg = self.figures_dir / f"{stem}.svg"
             self.per_image_summary_paths.extend([saved_path_png, saved_path_svg])
-            cbar.set_label("Pixel intensity")
-            axes[0].set_xticks([])
-            axes[0].set_yticks([])
-
-            stats_lines = [
-                f"filename: {getattr(row, 'filename', image_path.name)}",
-                f"sample_id: {getattr(row, 'sample_id', 'n/a')}",
-                f"group: {getattr(row, 'group', 'n/a')}",
-                f"channel: {getattr(row, 'channel_canonical', getattr(row, 'channel', 'n/a'))}",
-                f"display range: [{vmin:.2f}, {vmax:.2f}]",
-            ]
-            for column, label in stats_fields:
-                value = getattr(row, column, None)
-                if value is None or pd.isna(value):
-                    continue
-                if isinstance(value, Number):
-                    stats_lines.append(f"{label}: {float(value):.3f}")
-                else:
-                    stats_lines.append(f"{label}: {value}")
-
-            axes[1].axis("off")
-            axes[1].text(
-                0.0,
-                1.0,
-                "\n".join(stats_lines),
-                transform=axes[1].transAxes,
-                va="top",
-                ha="left",
-                fontsize=10,
-                family="monospace",
-            )
-
-            group_value = str(getattr(row, "group", "unknown"))
-            group_slug = self._slugify(group_value)
-            per_image_dir = self.figures_dir / "per_image_summaries" / group_slug
-            per_image_dir.mkdir(parents=True, exist_ok=True)
-
-            filename_label = getattr(row, "filename", image_path.name)
-            sample_slug = self._slugify(str(getattr(row, "sample_id", "sample")))
-            file_slug = self._slugify(Path(filename_label).stem)
-            stem = f"per_image_summaries/{group_slug}/{sample_slug}__{file_slug}"
-            metadata = {
-                "Creator": self.name,
-                "Description": "Per-image summary linking projection pixel statistics to the TIFF.",
-            }
-            self.save_figure(figure, stem, formats=("png",), dpi=150, metadata=metadata)
-            plt.close(figure)
-
-            saved_path = per_image_dir / f"{sample_slug}__{file_slug}.png"
-            self.per_image_summary_paths.append(saved_path)
 
     def save_outputs(self) -> None:
         """Persist intermediate artefacts such as CSV files."""
