@@ -216,6 +216,7 @@ class ProjectionAnalysis(abc.ABC):
             ("ci_high", "CI high"),
         ]
 
+        # Group rows by logical sample/channel so we can show max/mean/median together.
         grouped = self.results.groupby(
             ["sample_id", "channel", "channel_canonical", "channel_marker", "group"]
         )
@@ -225,9 +226,11 @@ class ProjectionAnalysis(abc.ABC):
             per_image_dir = self.figures_dir / "per_image_summaries" / group_slug
             per_image_dir.mkdir(parents=True, exist_ok=True)
 
+            # Map projection type (max/mean/median) to the corresponding record.
             projections = {row.projection_type: row for row in group_df.itertuples()}
 
             figure, axes = plt.subplots(2, 3, figsize=(12, 8), constrained_layout=True)
+            rendered_any = False
             for col, projection_type in enumerate(["max", "mean", "median"]):
                 row_data = projections.get(projection_type)
                 ax_image = axes[0, col]
@@ -270,6 +273,9 @@ class ProjectionAnalysis(abc.ABC):
                 cbar.set_label("Pixel intensity")
 
                 stats_lines = [
+                    f"sample_id: {sample_id}",
+                    f"group: {group_value}",
+                    f"channel: {channel_canonical}",
                     f"filename: {getattr(row_data, 'filename', image_path.name)}",
                     f"display range: [{vmin:.2f}, {vmax:.2f}]",
                 ]
@@ -294,10 +300,15 @@ class ProjectionAnalysis(abc.ABC):
                     family="monospace",
                 )
 
-            filename_label = next(iter(group_df["filename"].tolist()), f"{sample_id}")
+                rendered_any = True
+
+            if not rendered_any:
+                plt.close(figure)
+                continue
+
             sample_slug = self._slugify(str(sample_id))
-            file_slug = self._slugify(Path(filename_label).stem)
-            stem = f"per_image_summaries/{group_slug}/{sample_slug}__{file_slug}"
+            channel_slug = self._slugify(str(channel_marker or channel))
+            stem = f"per_image_summaries/{group_slug}/{sample_slug}__{channel_slug}"
             metadata = {
                 "Creator": self.name,
                 "Description": (
@@ -310,34 +321,6 @@ class ProjectionAnalysis(abc.ABC):
             saved_path_png = self.figures_dir / f"{stem}.png"
             saved_path_svg = self.figures_dir / f"{stem}.svg"
             self.per_image_summary_paths.extend([saved_path_png, saved_path_svg])
-            image_path = Path(getattr(row, "path"))
-            if not image_path.exists():
-                print(f"[{self.name}]     Skipping missing TIFF: {image_path}", flush=True)
-                continue
-
-            try:
-                image = tiff.imread(image_path)
-            except Exception as exc:  # pragma: no cover - I/O dependent
-                print(f"[{self.name}]     Failed to read {image_path}: {exc}", flush=True)
-                continue
-
-            if image.ndim != 2:
-                image = np.squeeze(image)
-
-            vmin = float(np.percentile(image, 1.0))
-            vmax = float(np.percentile(image, 99.5))
-            if vmax <= vmin:
-                vmin = float(np.min(image))
-                vmax = float(np.max(image))
-
-            figure, axes = plt.subplots(1, 2, figsize=(10, 5), constrained_layout=True)
-
-            im = axes[0].imshow(image, cmap="gray", vmin=vmin, vmax=vmax)
-            axes[0].set_title(
-                f"{getattr(row, 'channel_marker', getattr(row, 'channel', 'channel')).strip()}\n"
-                f"{getattr(row, 'projection_type', '').upper()} projection"
-            )
-            cbar = figure.colorbar(im, ax=axes[0], fraction=0.046, pad=0.04)
             cbar.set_label("Pixel intensity")
             axes[0].set_xticks([])
             axes[0].set_yticks([])

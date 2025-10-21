@@ -58,9 +58,9 @@ PCDH19 vs LHX6 immunostaining experiment. It demonstrates how to:
   fonts - saved as `.svg` (editable text) and `.png` (300 dpi) in
   `analysis_pipeline/<channel-slug>/figures/`. Each box plot overlays the raw
   per-image means so the distribution remains visible.
-- Produce one PNG per TIFF under
+- Produce one PNG/SVG per sample under
   `analysis_pipeline/<channel-slug>/figures/per_image_summaries/` combining the
-  projection image with the associated statistics.
+  max/mean/median projections (top row) and their statistics (bottom row).
 - Save the manifest, per-image results, grouped summaries, and hypothesis tests
   as CSV tables in `analysis_pipeline/<channel-slug>/data/` inside
   `<project>/analysis_results/PCDHvsLHX6_WTvsKO_IHC/`.
@@ -94,8 +94,9 @@ This analysis mirrors the structure above but targets the Nestin/DCX cohort.
   folder is absent before analysis begins.
 - Recommended base path:
   `/Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt`.
-- Saves per-image summary PNGs (projection + stats) under the channel-specific
-  figures directory to keep visual context alongside the numbers.
+- Saves per-sample summary PNG/SVG figures (max/mean/median + stats) under the
+  channel-specific figures directory to keep visual context alongside the
+  numbers.
 - Channels that are not present in the dataset are skipped with a console
   message so you can confirm which markers were processed.
 
