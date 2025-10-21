@@ -44,6 +44,7 @@ class ProjectionRecord:
     channel_marker: str
     channel_wavelength_nm: Optional[float]
     subject_label: Optional[str]
+    filename: str
     path: Path
 
 
@@ -167,6 +168,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         original_filter = self.channel_filter.copy() if self.channel_filter else None
         aggregated_tables: list[Path] = []
         aggregated_figures: list[Path] = []
+        aggregated_per_images: list[Path] = []
 
         for name in unique_channels:
             aliases = self._expand_channel_aliases((name,))
@@ -188,6 +190,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
 
             aggregated_tables.extend(self.saved_table_paths)
             aggregated_figures.extend(self.saved_figure_paths)
+            aggregated_per_images.extend(self.per_image_summary_paths)
 
         self.channel_filter_names = original_names
         self.channel_filter = original_filter
@@ -196,6 +199,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
         self.pipeline_dir = getattr(self, "pipeline_root", self.pipeline_dir)
         self.saved_table_paths = aggregated_tables
         self.saved_figure_paths = aggregated_figures
+        self.per_image_summary_paths = aggregated_per_images
 
     def _expand_channel_aliases(self, names: Sequence[str]) -> tuple[str, ...]:
         """Return the union of names and any known aliases."""
@@ -257,6 +261,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                         channel_marker=metadata.get("marker", canonical_key or channel),
                         channel_wavelength_nm=metadata.get("wavelength_nm"),
                         subject_label=subject_label,
+                        filename=tif_path.name,
                         path=tif_path,
                     )
                 )
@@ -283,6 +288,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 "channel_marker": [record.channel_marker for record in records],
                 "channel_wavelength_nm": [record.channel_wavelength_nm for record in records],
                 "subject_label": [record.subject_label for record in records],
+                "filename": [record.filename for record in records],
                 "path": [record.path for record in records],
             }
         )
@@ -306,6 +312,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     "channel_marker": row.channel_marker,
                     "channel_wavelength_nm": row.channel_wavelength_nm,
                     "subject_label": row.subject_label,
+                    "filename": row.filename,
                     "path": str(path),
                     **stats,
                 }
@@ -465,6 +472,13 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 subject_labels = sorted(
                     {label for label in group_df["subject_label"].dropna().astype(str)}
                 )
+                filenames = (
+                    group_df.get("filename", pd.Series(dtype=str))
+                    .astype(str)
+                    .sort_values()
+                    .unique()
+                    .tolist()
+                )
                 pixel_means = group_df["pixel_mean"].astype(float).to_numpy()
                 pixel_medians = group_df["pixel_median"].astype(float).to_numpy()
                 n = int(pixel_means.size)
@@ -486,6 +500,7 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                         "channel_wavelength_nm": meta_row.get("channel_wavelength_nm"),
                         "n": n,
                         "subject_labels": ";".join(subject_labels) if subject_labels else "",
+                        "filenames": ";".join(filenames) if filenames else "",
                         "pixel_mean_mean": mean_mean,
                         "pixel_mean_median": median_mean,
                         "pixel_mean_std": std_mean,
@@ -523,6 +538,20 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                 projection_df.loc[projection_df["group"] == "KO", "pixel_mean"]
                 .astype(float)
                 .to_numpy()
+            )
+            wt_files = (
+                projection_df.loc[projection_df["group"] == "WT", "filename"]
+                .astype(str)
+                .sort_values()
+                .unique()
+                .tolist()
+            )
+            ko_files = (
+                projection_df.loc[projection_df["group"] == "KO", "filename"]
+                .astype(str)
+                .sort_values()
+                .unique()
+                .tolist()
             )
 
             if wt_values.size == 0 or ko_values.size == 0:
@@ -563,6 +592,8 @@ class PCDHvsLHX6_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     "ko_median": float(np.median(ko_values)),
                     "wt_sem": _sem(wt_values),
                     "ko_sem": _sem(ko_values),
+                    "wt_filenames": ";".join(wt_files),
+                    "ko_filenames": ";".join(ko_files),
                     "subject_labels": ";".join(
                         sorted(
                             {label for label in projection_df["subject_label"].dropna().astype(str)}

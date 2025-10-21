@@ -189,6 +189,9 @@ Key points for non-programmers:
   using Arial fonts so the annotations remain editable in Illustrator. Each plot
   overlays the per-image data points on top of the boxplot so the distribution is
   visible.
+- `figures/per_image_summaries/` - one PNG per TIFF (image + summary statistics)
+  so you can visually link each projection with the numeric values stored in the
+  CSV outputs.
 - Statistical tests use `scipy`; install it in the same environment if it is not
   already available.
 
@@ -212,6 +215,9 @@ python simple_projection_tool/run_projection_analysis.py \
   before any analysis starts.
 - If a requested channel is absent in the dataset, the CLI prints a skip message
   and continues with the remaining markers.
+- Per-image summary PNGs are saved under
+  `analysis_results/NestinvsDcx_WTvsKO_IHC/analysis_pipeline/<channel>/figures/per_image_summaries/`
+  to pair each TIFF with its computed statistics.
 
 - To build a new analysis, copy the template described in
   [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in

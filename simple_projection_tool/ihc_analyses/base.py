@@ -15,7 +15,7 @@ import abc
 from pathlib import Path
 import subprocess
 import sys
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 import pandas as pd
 
@@ -92,8 +92,9 @@ class ProjectionAnalysis(abc.ABC):
 
         # ``save_outputs`` and ``save_figure`` populate these lists so the CLI
         # can report exactly what was created during the run.
-        self.saved_table_paths: list[Path] = []
-        self.saved_figure_paths: list[Path] = []
+        self.saved_table_paths: List[Path] = []
+        self.saved_figure_paths: List[Path] = []
+        self.per_image_summary_paths: List[Path] = []
 
         # The manifest lists every file we plan to inspect. ``results`` stores
         # the processed measurements calculated from those files. Subclasses
@@ -110,6 +111,7 @@ class ProjectionAnalysis(abc.ABC):
 
         self.saved_table_paths.clear()
         self.saved_figure_paths.clear()
+        self.per_image_summary_paths.clear()
         self.additional_tables.clear()
 
         if self.channel_filter_names:
@@ -148,6 +150,13 @@ class ProjectionAnalysis(abc.ABC):
             flush=True,
         )
 
+        print(f"[{self.name}] Creating per-image summaries ...", flush=True)
+        self.generate_per_image_summaries()
+        print(
+            f"[{self.name}]  -> generated {len(self.per_image_summary_paths)} per-image figure(s).",
+            flush=True,
+        )
+
         print(f"[{self.name}] Saving data tables ...", flush=True)
         self.save_outputs()
         print(
@@ -176,6 +185,112 @@ class ProjectionAnalysis(abc.ABC):
 
     def generate_plots(self) -> None:
         """Produce figures summarising the analysis."""
+
+    def generate_per_image_summaries(self) -> None:
+        """Produce per-image summary figures (image + statistics)."""
+
+        self.per_image_summary_paths.clear()
+        if self.results is None or self.results.empty:
+            return
+
+        try:  # Lazily import heavy dependencies.
+            import matplotlib.pyplot as plt  # type: ignore
+            import numpy as np  # type: ignore
+            import tifffile as tiff  # type: ignore
+        except Exception as exc:  # pragma: no cover - environment dependent
+            print(
+                f"[{self.name}]     Skipping per-image summaries (missing dependency): {exc}",
+                flush=True,
+            )
+            return
+
+        from numbers import Number
+
+        stats_fields = [
+            ("pixel_count", "Pixel count"),
+            ("pixel_mean", "Pixel mean"),
+            ("pixel_median", "Pixel median"),
+            ("pixel_std", "Pixel std"),
+            ("pixel_max", "Pixel max"),
+            ("ci_low", "CI low"),
+            ("ci_high", "CI high"),
+        ]
+
+        for row in self.results.itertuples():
+            image_path = Path(getattr(row, "path"))
+            if not image_path.exists():
+                print(f"[{self.name}]     Skipping missing TIFF: {image_path}", flush=True)
+                continue
+
+            try:
+                image = tiff.imread(image_path)
+            except Exception as exc:  # pragma: no cover - I/O dependent
+                print(f"[{self.name}]     Failed to read {image_path}: {exc}", flush=True)
+                continue
+
+            if image.ndim != 2:
+                image = np.squeeze(image)
+
+            vmin = float(np.percentile(image, 1.0))
+            vmax = float(np.percentile(image, 99.5))
+            if vmax <= vmin:
+                vmin = float(np.min(image))
+                vmax = float(np.max(image))
+
+            figure, axes = plt.subplots(1, 2, figsize=(10, 5), constrained_layout=True)
+
+            im = axes[0].imshow(image, cmap="gray", vmin=vmin, vmax=vmax)
+            axes[0].set_title(
+                f"{getattr(row, 'channel_marker', getattr(row, 'channel', 'channel')).strip()}\n"
+                f"{getattr(row, 'projection_type', '').upper()} projection"
+            )
+            cbar = figure.colorbar(im, ax=axes[0], fraction=0.046, pad=0.04)
+            cbar.set_label("Pixel intensity")
+            axes[0].set_xticks([])
+            axes[0].set_yticks([])
+
+            stats_lines = [
+                f"filename: {getattr(row, 'filename', image_path.name)}",
+                f"sample_id: {getattr(row, 'sample_id', 'n/a')}",
+                f"group: {getattr(row, 'group', 'n/a')}",
+                f"channel: {getattr(row, 'channel_canonical', getattr(row, 'channel', 'n/a'))}",
+                f"display range: [{vmin:.2f}, {vmax:.2f}]",
+            ]
+            for column, label in stats_fields:
+                value = getattr(row, column, None)
+                if value is None or pd.isna(value):
+                    continue
+                if isinstance(value, Number):
+                    stats_lines.append(f"{label}: {float(value):.3f}")
+                else:
+                    stats_lines.append(f"{label}: {value}")
+
+            axes[1].axis("off")
+            axes[1].text(
+                0.0,
+                1.0,
+                "\n".join(stats_lines),
+                transform=axes[1].transAxes,
+                va="top",
+                ha="left",
+                fontsize=10,
+                family="monospace",
+            )
+
+            group_slug = str(getattr(row, "group", "unknown"))
+            per_image_dir = self.figures_dir / "per_image_summaries" / group_slug
+            per_image_dir.mkdir(parents=True, exist_ok=True)
+
+            stem = f"per_image_summaries/{group_slug}/{image_path.stem}"
+            metadata = {
+                "Creator": self.name,
+                "Description": "Per-image summary linking projection pixel statistics to the TIFF.",
+            }
+            self.save_figure(figure, stem, formats=("png",), dpi=150, metadata=metadata)
+            plt.close(figure)
+
+            saved_path = per_image_dir / f"{image_path.stem}.png"
+            self.per_image_summary_paths.append(saved_path)
 
     def save_outputs(self) -> None:
         """Persist intermediate artefacts such as CSV files."""
@@ -240,6 +355,7 @@ class ProjectionAnalysis(abc.ABC):
         for ext in formats:
             ext = ext.lower().lstrip(".")
             output_path = self.figures_dir / f"{stem}.{ext}"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             save_kwargs = {
                 "format": ext,
                 "dpi": dpi,

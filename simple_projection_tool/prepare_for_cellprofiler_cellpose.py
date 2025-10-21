@@ -154,6 +154,7 @@ def prepare_exports(
                     "group": group,
                     "sample_id": row.sample_id,
                     "projection_type": row.projection_type,
+                    "filename": getattr(row, "filename", source_path.name),
                     "source_path": str(source_path),
                     "export_path": str(destination),
                     "manifest": str(manifest_path),
