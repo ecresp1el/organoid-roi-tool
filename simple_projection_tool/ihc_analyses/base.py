@@ -187,7 +187,7 @@ class ProjectionAnalysis(abc.ABC):
         """Produce figures summarising the analysis."""
 
     def generate_per_image_summaries(self) -> None:
-        """Produce per-image summary figures (image + statistics)."""
+        """Produce per-sample summary figures (max/mean/median plus statistics)."""
 
         self.per_image_summary_paths.clear()
         if self.results is None or self.results.empty:
@@ -216,7 +216,6 @@ class ProjectionAnalysis(abc.ABC):
             ("ci_high", "CI high"),
         ]
 
-        # Group rows by logical sample/channel so we can show max/mean/median together.
         grouped = self.results.groupby(
             ["sample_id", "channel", "channel_canonical", "channel_marker", "group"]
         )
@@ -226,22 +225,21 @@ class ProjectionAnalysis(abc.ABC):
             per_image_dir = self.figures_dir / "per_image_summaries" / group_slug
             per_image_dir.mkdir(parents=True, exist_ok=True)
 
-            # Map projection type (max/mean/median) to the corresponding record.
-            projections = {row.projection_type: row for row in group_df.itertuples()}
-
-            figure, axes = plt.subplots(2, 3, figsize=(12, 8), constrained_layout=True)
+            figure, axes = plt.subplots(2, 3, figsize=(14, 8), constrained_layout=True)
             rendered_any = False
+
             for col, projection_type in enumerate(["max", "mean", "median"]):
-                row_data = projections.get(projection_type)
                 ax_image = axes[0, col]
                 ax_stats = axes[1, col]
 
-                if row_data is None:
+                subset = group_df[group_df["projection_type"] == projection_type]
+                if subset.empty:
                     ax_image.axis("off")
                     ax_stats.axis("off")
                     continue
 
-                image_path = Path(row_data.path)
+                row_series = subset.iloc[0]
+                image_path = Path(row_series["path"])
                 if not image_path.exists():
                     print(f"[{self.name}]     Skipping missing TIFF: {image_path}", flush=True)
                     ax_image.axis("off")
@@ -276,11 +274,11 @@ class ProjectionAnalysis(abc.ABC):
                     f"sample_id: {sample_id}",
                     f"group: {group_value}",
                     f"channel: {channel_canonical}",
-                    f"filename: {getattr(row_data, 'filename', image_path.name)}",
+                    f"filename: {row_series.get('filename', image_path.name)}",
                     f"display range: [{vmin:.2f}, {vmax:.2f}]",
                 ]
                 for column, label in stats_fields:
-                    value = getattr(row_data, column, None)
+                    value = row_series.get(column)
                     if value is None or pd.isna(value):
                         continue
                     if isinstance(value, Number):
@@ -312,7 +310,7 @@ class ProjectionAnalysis(abc.ABC):
             metadata = {
                 "Creator": self.name,
                 "Description": (
-                    "Per-image summary combining max/mean/median projections with pixel statistics."
+                    "Per-sample summary combining max/mean/median projections with pixel statistics."
                 ),
             }
             self.save_figure(figure, stem, formats=("png", "svg"), dpi=150, metadata=metadata)
