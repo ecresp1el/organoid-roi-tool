@@ -277,11 +277,15 @@ class ProjectionAnalysis(abc.ABC):
                 family="monospace",
             )
 
-            group_slug = str(getattr(row, "group", "unknown"))
+            group_value = str(getattr(row, "group", "unknown"))
+            group_slug = self._slugify(group_value)
             per_image_dir = self.figures_dir / "per_image_summaries" / group_slug
             per_image_dir.mkdir(parents=True, exist_ok=True)
 
-            stem = f"per_image_summaries/{group_slug}/{image_path.stem}"
+            filename_label = getattr(row, "filename", image_path.name)
+            sample_slug = self._slugify(str(getattr(row, "sample_id", "sample")))
+            file_slug = self._slugify(Path(filename_label).stem)
+            stem = f"per_image_summaries/{group_slug}/{sample_slug}__{file_slug}"
             metadata = {
                 "Creator": self.name,
                 "Description": "Per-image summary linking projection pixel statistics to the TIFF.",
@@ -289,7 +293,7 @@ class ProjectionAnalysis(abc.ABC):
             self.save_figure(figure, stem, formats=("png",), dpi=150, metadata=metadata)
             plt.close(figure)
 
-            saved_path = per_image_dir / f"{image_path.stem}.png"
+            saved_path = per_image_dir / f"{sample_slug}__{file_slug}.png"
             self.per_image_summary_paths.append(saved_path)
 
     def save_outputs(self) -> None:
@@ -409,6 +413,11 @@ class ProjectionAnalysis(abc.ABC):
             for channel in channels
             if self._channel_is_selected(channel)
         ]
+
+    def _slugify(self, value: str) -> str:
+        """Return a filesystem-safe slug derived from ``value``."""
+
+        return self._normalise_channel_name(value)
 
     def _ensure_projection_exports(self) -> None:
         """Verify projection exports exist; run the generator when missing."""
