@@ -225,33 +225,42 @@ class ProjectionAnalysis(abc.ABC):
             per_image_dir = self.figures_dir / "per_image_summaries" / group_slug
             per_image_dir.mkdir(parents=True, exist_ok=True)
 
-            figure, axes = plt.subplots(2, 3, figsize=(14, 8), constrained_layout=True)
+            # Use a GridSpec so image rows are taller than the text rows.
+            figure = plt.figure(figsize=(18, 10))
+            grid = figure.add_gridspec(
+                2,
+                3,
+                height_ratios=(4.5, 1.5),
+                hspace=0.45,
+                wspace=0.25,
+            )
+
             rendered_any = False
 
             for col, projection_type in enumerate(["max", "mean", "median"]):
-                ax_image = axes[0, col]
-                ax_stats = axes[1, col]
+                ax_image = figure.add_subplot(grid[0, col])
+                ax_stats = figure.add_subplot(grid[1, col])
 
                 subset = group_df[group_df["projection_type"] == projection_type]
                 if subset.empty:
-                    ax_image.axis("off")
-                    ax_stats.axis("off")
+                    ax_image.remove()
+                    ax_stats.remove()
                     continue
 
                 row_series = subset.iloc[0]
                 image_path = Path(row_series["path"])
                 if not image_path.exists():
                     print(f"[{self.name}]     Skipping missing TIFF: {image_path}", flush=True)
-                    ax_image.axis("off")
-                    ax_stats.axis("off")
+                    ax_image.remove()
+                    ax_stats.remove()
                     continue
 
                 try:
                     image = tiff.imread(image_path)
                 except Exception as exc:  # pragma: no cover - I/O dependent
                     print(f"[{self.name}]     Failed to read {image_path}: {exc}", flush=True)
-                    ax_image.axis("off")
-                    ax_stats.axis("off")
+                    ax_image.remove()
+                    ax_stats.remove()
                     continue
 
                 if image.ndim != 2:
@@ -264,9 +273,8 @@ class ProjectionAnalysis(abc.ABC):
                     vmax = float(np.max(image))
 
                 im = ax_image.imshow(image, cmap="gray", vmin=vmin, vmax=vmax)
-                ax_image.set_title(f"{projection_type.upper()} projection")
-                ax_image.set_xticks([])
-                ax_image.set_yticks([])
+                ax_image.set_title(f"{projection_type.upper()} projection", fontsize=12)
+                ax_image.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
                 cbar = figure.colorbar(im, ax=ax_image, fraction=0.046, pad=0.04)
                 cbar.set_label("Pixel intensity")
 
@@ -294,7 +302,7 @@ class ProjectionAnalysis(abc.ABC):
                     transform=ax_stats.transAxes,
                     va="top",
                     ha="left",
-                    fontsize=10,
+                    fontsize=9,
                     family="monospace",
                 )
 
