@@ -141,3 +141,6 @@ pipeline with consistent folder structure and saved outputs.
 - Update docstrings at the top of each module to describe assumptions (dataset
   layout, markers, aliases). Future contributors can then duplicate the file
   and adjust it with minimal effort.
+- Once an analysis is complete you can hand off to cell segmentation tools via
+  ``prepare_for_cellprofiler_cellpose.py``, which consumes the manifest tables
+  and exports the 16-bit TIFFs grouped by analysis/channel/group.

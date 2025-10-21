@@ -217,6 +217,26 @@ python simple_projection_tool/run_projection_analysis.py \
   [`ihc_analyses/README.md`](./ihc_analyses/README.md) and register it in
   `ihc_analyses/__init__.py`.
 
+### 8. CellProfiler/Cellpose export (final step)
+
+After running the projections and analysis, gather 16-bit TIFFs for downstream
+segmentation tools:
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
+python simple_projection_tool/prepare_for_cellprofiler_cellpose.py \
+    --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+    --analysis PCDHvsLHX6_WTvsKO_IHC
+```
+
+Repeat with ``NestinvsDcx_WTvsKO_IHC`` (or omit ``--analysis`` to export every
+registered analysis). The script confirms that projections and analysis results
+exist, then copies every 16-bit TIFF into
+``<base-path>/cellprofilerandcellpose_folder/<analysis>/<channel>/<group>/``
+and writes ``cellprofilerandcellpose_metadata.csv`` so each exported file can be
+linked back to its source.
+
 ### Developing additional analyses
 
 1. Duplicate one of the existing analysis modules in
