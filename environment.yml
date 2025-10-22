@@ -2,25 +2,18 @@ name: organoid_roi_incucyte_imaging
 channels:
   - conda-forge
 dependencies:
-  - python=3.9
+  - python=3.11
   - pip
   - pytest>=8
   - imagecodecs>=2024.1
   - pillow>=10.3
   - h5py>=3.10
   - matplotlib>=3.8
-  - numpy>=1.24
-  - scipy>=1.10
-  - scikit-image>=0.22
-  - wxpython>=4.2
   - pip:
-      - cellprofiler==4.2.5
-      - cellpose==3.0.5
-      - torch==2.2.2
-      - torchvision==0.17.2
-      - torchaudio==2.2.2
       - napari>=0.4.19
       - PySide6>=6.6
+      - numpy>=1.24
       - tifffile>=2024.2.12
+      - scikit-image>=0.22
       - pandas>=2.2
       - pyinstaller>=6.5

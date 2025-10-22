@@ -249,7 +249,6 @@ After running the projections and analysis, gather 16-bit TIFFs for downstream
 segmentation tools:
 
 ```bash
-conda env update -f environment.yml --prune  # install CPU CellProfiler + Cellpose (one time)
 conda activate organoid_roi_incucyte_imaging
 cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
 python simple_projection_tool/prepare_for_cellprofiler_cellpose.py \
@@ -264,10 +263,21 @@ exist, then copies every 16-bit TIFF into
 and writes ``cellprofilerandcellpose_metadata.csv`` so each exported file can be
 linked back to its source.
 
-> **What happens next?** These exports are designed for **CellProfiler** or
-> **Cellpose** segmentation/OCR pipelines. A future version of this toolkit will
-> ship a ready-to-run Cellpose workflow that reads the metadata CSV and
-> generates masks automatically.
+> **CellProfiler + Cellpose on Apple Silicon**
+>
+> CellProfiler currently ships pre-built wheels for Intel macOS. On Apple Silicon
+> (M-series) Macs, create an x86_64 Conda environment from a **Rosetta** terminal:
+> ```bash
+> arch -x86_64 /bin/zsh              # open a Rosetta shell (or use Terminal → Get Info → Open using Rosetta)
+> CONDA_SUBDIR=osx-64 conda env create -f cellprofiler_osx64.yml
+> conda activate cellprofiler_osx64
+> conda config --env --set subdir osx-64
+> cellprofiler  # launches the GUI (now Cellpose-aware once the plugin is added)
+> ```
+> This keeps the main `organoid_roi_incucyte_imaging` environment ARM-native while
+> giving CellProfiler access to Cellpose and PyTorch. A future release will include
+> an automated pipeline that reads the metadata CSV and passes each export through
+> Cellpose headlessly.
 
 ### Developing additional analyses
 
