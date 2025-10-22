@@ -133,15 +133,35 @@ Channel names are pulled from the Imaris metadata, sanitised for filesystem safe
 
 ## 7. Post-processing analyses (PCDH19/LHX6 example)
 
-The projection exports can now feed into reproducible analysis objects stored in
-[`ihc_analyses/`](./ihc_analyses/). Each object corresponds to one biological
-question and follows the same structure (`import_data -> process_data ->
-run_statistics -> generate_plots -> save`). The first example,
-`PCDHvsLHX6_WTvsKO_IHC`, demonstrates how to classify WT vs KO folders, compute
-descriptive statistics from the 16-bit TIFFs, compare the groups with parametric
-and non-parametric tests, and export ready-to-plot tables and figures.
 
-To run the analysis from a terminal:
+### 7. Post-processing analyses (PCDH19/LHX6 example)
+
+The projection exports now feed into reproducible **analysis pipelines** stored
+in [`ihc_analyses/`](./ihc_analyses/). Each pipeline is a conceptual “analysis
+plan” tailored to one biological question and follows the same structure
+(`import_data → process_data → run_statistics → generate_plots → save`). Because
+the steps are standardised, non-programmers can trust that every analysis collects
+the same metadata, produces the same folders, and prints clear status messages.
+The first pipeline, `PCDHvsLHX6_WTvsKO_IHC`, shows how this template classifies
+WT vs KO folders, computes per-image statistics from the 16-bit TIFFs, compares
+the groups with parametric and non-parametric tests, and exports ready-to-interpret
+tables and figures.
+
+**Before you run an analysis**
+
+1. Confirm the shared drive is mounted:
+   ```bash
+   ls /Volumes/Manny4TBUM
+   ```
+   If this command fails, mount the drive and try again.
+2. Confirm the project folder exists. Example:
+   ```bash
+   ls /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder
+   ```
+   The helper will skip channels if the `<base-path>` cannot be found.
+
+To run the analysis from a terminal (make sure the external drive/volume is
+mounted so the `<base-path>` exists):
 
 ```bash
 conda activate organoid_roi_incucyte_imaging
@@ -190,12 +210,12 @@ Key points for non-programmers:
   overlays the per-image data points on top of the boxplot so the distribution is
   visible.
 - `figures/per_image_summaries/` - one PNG/SVG per sample showing a 3×2 grid of
-  max/mean/median projections (top row) and their statistics (bottom row),
-  making it easy to correlate each TIFF with the CSV values.
+  max/mean/median projections (top row) and their statistics (bottom row), making
+  it easy to correlate each TIFF with the CSV values without leaving the dataset.
 - Statistical tests use `scipy`; install it in the same environment if it is not
   already available.
 
-To process the Nestin/DCX dataset:
+To process the Nestin/DCX dataset (remember to verify the base path first):
 
 ```bash
 conda activate organoid_roi_incucyte_imaging

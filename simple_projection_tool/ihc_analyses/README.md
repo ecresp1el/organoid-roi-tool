@@ -150,3 +150,6 @@ pipeline with consistent folder structure and saved outputs.
 - Once an analysis is complete you can hand off to cell segmentation tools via
   ``prepare_for_cellprofiler_cellpose.py``, which consumes the manifest tables
   and exports the 16-bit TIFFs grouped by analysis/channel/group.
+- Remind end users to verify that the shared drive (e.g. ``/Volumes/Manny4TBUM``)
+  is mounted before running a pipeline; otherwise the helper will skip channels
+  because the base path is missing.
