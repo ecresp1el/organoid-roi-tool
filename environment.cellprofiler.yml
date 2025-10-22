@@ -23,6 +23,6 @@ dependencies:
   - pip:
       - cython<3
       - cellprofiler==4.2.8
-      - cellpose==3.0.5
+      - cellpose[gui]==3.0.5
       - pydantic>=1.10,<2
       - PyYAML>=6
