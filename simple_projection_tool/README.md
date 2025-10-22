@@ -263,6 +263,11 @@ exist, then copies every 16-bit TIFF into
 and writes ``cellprofilerandcellpose_metadata.csv`` so each exported file can be
 linked back to its source.
 
+> **What happens next?** These exports are designed for **CellProfiler** or
+> **Cellpose** segmentation/OCR pipelines. A future version of this toolkit will
+> ship a ready-to-run Cellpose workflow that reads the metadata CSV and
+> generates masks automatically.
+
 ### Developing additional analyses
 
 1. Duplicate one of the existing analysis modules in
