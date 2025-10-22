@@ -249,6 +249,7 @@ After running the projections and analysis, gather 16-bit TIFFs for downstream
 segmentation tools:
 
 ```bash
+conda env update -f environment.yml --prune  # install CPU CellProfiler + Cellpose (one time)
 conda activate organoid_roi_incucyte_imaging
 cd /Users/ecrespo/Documents/github_project_folder/organoid-roi-tool
 python simple_projection_tool/prepare_for_cellprofiler_cellpose.py \
