@@ -2,6 +2,12 @@
 
 This utility creates a standardized set of projections and visualizations for each Imaris `.ims` file in a folder. It lives in its own subdirectory (`simple_projection_tool/`) so it can evolve independently while still relying on the shared `imaris_tools` package in this repository (exposed here via a symlink).
 
+> ℹ️ **How this README relates to the main project guide**
+>
+> - The root [`README.md`](../README.md) covers the Organoid ROI Tool GUI, project organisation workflow, and an overview of the two Conda environments maintained in this repo.
+> - This document focuses specifically on the projection / IHC analysis helpers under `simple_projection_tool/`.
+> - When the instructions below mention activating `organoid_roi_incucyte_imaging` or `cellprofiler_env`, refer back to the root README for details on how those environments are created and when to use them.
+
 ---
 
 ## 1. What the script does
@@ -38,7 +44,7 @@ For reference:
 
 ## 2. Requirements
 
-Activate the project’s Conda environment so the shared dependencies are available:
+Activate the main ROI environment so the shared dependencies (`imaris_tools`, TIFF stack, plotting libraries) are available:
 
 ```bash
 conda activate organoid_roi_incucyte_imaging
@@ -48,6 +54,8 @@ The script relies on:
 
 - `imaris_tools.metadata.read_metadata` (already part of this repository)
 - `h5py`, `numpy`, `tifffile`, `matplotlib`
+
+If you also plan to segment the exported projections in CellProfiler or Cellpose, keep the dedicated `cellprofiler_env` (defined in `environment.cellprofiler.yml`) on hand. The segmentation pipeline is described in [Section 8](#8-cellprofilercellpose-export-final-step).
 
 ---
 
@@ -263,21 +271,15 @@ exist, then copies every 16-bit TIFF into
 and writes ``cellprofilerandcellpose_metadata.csv`` so each exported file can be
 linked back to its source.
 
-> **CellProfiler + Cellpose on Apple Silicon**
+> **Launching CellProfiler / Cellpose**
 >
-> CellProfiler currently ships pre-built wheels for Intel macOS. On Apple Silicon
-> (M-series) Macs, create an x86_64 Conda environment from a **Rosetta** terminal:
+> Use the separate environment described in the root README:
 > ```bash
-> arch -x86_64 /bin/zsh              # open a Rosetta shell (or use Terminal → Get Info → Open using Rosetta)
-> CONDA_SUBDIR=osx-64 conda env create -f cellprofiler_osx64.yml
-> conda activate cellprofiler_osx64
-> conda config --env --set subdir osx-64
-> cellprofiler  # launches the GUI (now Cellpose-aware once the plugin is added)
+> conda activate cellprofiler_env
+> cellprofiler          # CellProfiler GUI (legacy wxPython stack)
+> cellpose              # Cellpose GUI (Qt/PyQt6)
 > ```
-> This keeps the main `organoid_roi_incucyte_imaging` environment ARM-native while
-> giving CellProfiler access to Cellpose and PyTorch. A future release will include
-> an automated pipeline that reads the metadata CSV and passes each export through
-> Cellpose headlessly.
+> This environment is built from `environment.cellprofiler.yml` and pins the legacy imaging libraries that CellProfiler expects, while the main ROI / projection tooling stays on the modern `organoid_roi_incucyte_imaging` stack.
 
 ### Developing additional analyses
 

@@ -26,6 +26,8 @@ conda activate organoid_roi_incucyte_imaging
 python gui_app.py
 ```
 
+> Need CellProfiler or Cellpose? Use the dedicated `cellprofiler_env` described in [Section 9](#9-cellprofiler--cellpose-environment) so the legacy scientific stack required by CellProfiler stays separate from the modern Napari/Qt stack that powers the ROI tool.
+
 ---
 
 ## 2) Organizing Your Images (Optional but Recommended)
@@ -425,7 +427,50 @@ python gui_app.py
 
 ---
 
-## 9) File Reference
+## 9) CellProfiler + Cellpose Environment
+
+CellProfiler 4.x and the latest Cellpose GUI require a different (older) set of scientific libraries than the Napari ROI tool. To avoid dependency conflicts, keep them in their own Conda environment built from `environment.cellprofiler.yml`.
+
+### Create the environment
+
+```
+conda env create -n cellprofiler_env -f environment.cellprofiler.yml
+```
+
+This installs:
+
+- Legacy imaging stack pinned for CellProfiler (`scipy 1.9.0`, `scikit-image 0.18.3`, `wxPython 4.2.3`, etc.)
+- PyTorch 2.1 CPU build from the official `pytorch` channel
+- CellProfiler 4.2.8 and Cellpose 3.0.5 (with GUI extras)
+
+### Launch CellProfiler
+
+```
+conda activate cellprofiler_env
+cellprofiler          # launches the CellProfiler GUI
+```
+
+Use this environment whenever you need to create or run CellProfiler pipelines that depend on the classic wxPython interface.
+
+### Launch Cellpose
+
+```
+conda activate cellprofiler_env
+cellpose              # launches the Cellpose GUI
+```
+
+The same environment also exposes the command-line tools, e.g. `cellprofiler --help`, `python -m cellpose --help`, etc.
+
+### Switching between environments
+
+- ROI labeling and project management → `organoid_roi_incucyte_imaging`
+- CellProfiler / Cellpose workflows → `cellprofiler_env`
+
+Deactivate (`conda deactivate`) before activating the other environment to avoid path mix-ups.
+
+---
+
+## 10) File Reference
 
 - `gui_app.py` – The Napari‑based GUI for loading images, drawing ROI, and saving outputs.
 - `roi_utils.py` – ROI math: polygon mask, area, perimeter, centroid. Robust fallbacks (scikit‑image → Pillow → NumPy) for mask rasterization.
@@ -437,7 +482,7 @@ python gui_app.py
 
 ---
 
-## 10) FAQ
+## 11) FAQ
 
 Does saving an ROI change my original image?
 - No. The original image is not modified. New files are created alongside it.
@@ -460,7 +505,7 @@ Happy analyzing!
  
 ---
  
-## 11) Sample Data Quick Test (Works Out‑of‑the‑Box)
+## 12) Sample Data Quick Test (Works Out‑of‑the‑Box)
  
 Use this quick recipe to prove everything is working using synthetic TIFFs.
  
