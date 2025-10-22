@@ -7,11 +7,20 @@ import pandas as pd
 print("[gui] Starting Organoid ROI Tool v9...")
 print(f"[gui] Python: {sys.version}")
 try:
-    from PySide6 import QtWidgets, QtCore, QtGui
+    from PySide6 import QtWidgets, QtCore, QtGui  # type: ignore
+    _QT_BACKEND = "PySide6"
+except Exception:
+    try:
+        from PySide2 import QtWidgets, QtCore, QtGui  # type: ignore
+        _QT_BACKEND = "PySide2"
+    except Exception as e:
+        print("[gui] ERROR importing Qt bindings:", e)
+        sys.exit(1)
+try:
     import napari
-    print(f"[gui] PySide6 imported, napari imported.")
+    print(f"[gui] GUI backend {_QT_BACKEND} imported, napari imported.")
 except Exception as e:
-    print("[gui] ERROR importing GUI libs:", e)
+    print("[gui] ERROR importing napari:", e)
     sys.exit(1)
 # Pillow fallback
 try:

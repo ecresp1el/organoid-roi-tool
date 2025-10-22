@@ -1,0 +1,27 @@
+name: cellprofiler_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip
+  - numpy>=1.22,<1.25
+  - scipy=1.9.0
+  - scikit-image=0.18.3
+  - tifffile=2022.4.8
+  - h5py=3.6.0
+  - matplotlib>=3.7,<3.9
+  - pillow>=10.0
+  - imageio>=2.5
+  - mysql>=8
+  - wxpython=4.2.3
+  - pandas>=1.5,<2.2
+  - scikit-learn=0.24.2
+  - pip:
+      - cython<3
+      - cellprofiler==4.2.8
+      - cellpose==3.0.5
+      - torch==2.2.2
+      - torchvision==0.17.2
+      - torchaudio==2.2.2
+      - pydantic>=1.10,<2
+      - PyYAML>=6
