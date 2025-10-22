@@ -1,5 +1,6 @@
 name: cellprofiler_env
 channels:
+  - pytorch
   - conda-forge
 dependencies:
   - python=3.9
@@ -16,12 +17,12 @@ dependencies:
   - wxpython=4.2.3
   - pandas>=1.5,<2.2
   - scikit-learn=0.24.2
+  - pytorch=2.1.0
+  - torchvision=0.16.0
+  - torchaudio=2.1.0
   - pip:
       - cython<3
       - cellprofiler==4.2.8
       - cellpose==3.0.5
-      - torch==2.2.2
-      - torchvision==0.17.2
-      - torchaudio==2.2.2
       - pydantic>=1.10,<2
       - PyYAML>=6
