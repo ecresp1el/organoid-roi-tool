@@ -276,11 +276,13 @@ linked back to its source. As part of the copy step the helper now:
   ``Confocal_-_Blue``, ``Nuclei``, etc.) and copies the matching max/mean/median
   TIFFs into a ``DAPI_reference`` channel directory so segmentation tools always
   receive a nuclei image alongside marker channels.
-- **Builds Cellpose-ready ZCYX stacks.** Every sample with at least two channels
-  (including DAPI) produces a single TIFF per projection type under
-  ``cellpose_multichannel_zcyx/<analysis>/<projection>/<group>/``. The stack is
-  written in Z×C×Y×X order and the filename lists the channels (e.g.
-  ``…__median__LHX6+PCDH19+DAPI.tif``).
+- **Builds Cellpose-ready multichannel stacks.** Every sample with at least two
+  channels (including DAPI) produces a single TIFF per projection type under
+  ``cellpose_multichannel_zcyx/<analysis>/<projection>/<group>/``. If multiple Z
+  planes exist the stack is written in Z×C×Y×X order; when projections are
+  2-D (the typical case) the redundant Z dimension is dropped so the file is
+  stored as C×Y×X, which the Cellpose GUI can load without the ``--Zstack`` flag.
+  Filenames list the included channels (e.g. ``…__median__LHX6+PCDH19+DAPI.tif``).
 - **Validates the channel count on disk.** After writing each stack the script
   re-opens the TIFF and logs a ``[check]`` message confirming that the expected
   number of channels (usually three) is present. A mismatch triggers a warning

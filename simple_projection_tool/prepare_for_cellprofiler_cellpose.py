@@ -439,9 +439,19 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
             )
             continue
 
-        # Stack the per-channel volumes into a single ZCYX tensor (Cellpose's
-        # preferred dimensional order).
+        # Stack the per-channel volumes into a single tensor. Cellpose expects
+        # ``Z x C x Y x X`` for multi-Z data but happily consumes ``C x Y x X``
+        # for 2-D projections. Because our projections are 2-D (Z=1), we drop
+        # the redundant Z dimension so the GUI can open the files without the
+        # ``--Zstack`` flag.
         stack = np.stack(channel_arrays, axis=1)  # Z x C x Y x X
+        z_planes = stack.shape[0]
+        height = stack.shape[-2]
+        width = stack.shape[-1]
+        axes = "ZCYX"
+        if z_planes == 1:
+            stack = stack[0]  # -> C x Y x X
+            axes = "CYX"
 
         dest_dir = dest_root / analysis / projection_type / str(group)
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -462,12 +472,7 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
         )
         dest_path = dest_dir / dest_name
 
-        tifffile.imwrite(
-            dest_path,
-            stack,
-            photometric="minisblack",
-            metadata={"axes": "ZCYX"},
-        )
+        tifffile.imwrite(dest_path, stack, photometric="minisblack", metadata={"axes": axes})
 
         _validate_stack_channels(dest_path, channel_records)
 
@@ -480,9 +485,9 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
                 "channel_count": len(channel_records),
                 "channels": "|".join(channel_labels),
                 "export_path": str(dest_path),
-                "z_planes": stack.shape[0],
-                "height": stack.shape[2],
-                "width": stack.shape[3],
+                "z_planes": z_planes,
+                "height": height,
+                "width": width,
                 "dtype": str(stack.dtype),
                 "source_exports": "|".join(
                     record["export_path"] for record in channel_records
@@ -491,7 +496,7 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
         )
 
         print(
-            f"[cellpose] Wrote {dest_path} with {len(channel_records)} channels in ZCYX order."
+            f"[cellpose] Wrote {dest_path} with {len(channel_records)} channels in {axes} order."
         )
 
     if not merged_rows:

@@ -472,7 +472,9 @@ python simple_projection_tool/prepare_for_cellprofiler_cellpose.py \
 ```
 
 The exporter now mirrors the DAPI (nuclear) projections alongside every marker,
-writes Cellpose-friendly Z×C×Y×X TIFF stacks named `…__LHX6+PCDH19+DAPI.tif`,
+writes Cellpose-friendly multichannel TIFF stacks named
+`…__LHX6+PCDH19+DAPI.tif` (stored as Z×C×Y×X when multiple planes exist, or
+flattened to C×Y×X for 2-D projections so the GUI loads without `--Zstack`),
 and logs a `[check]` message after each write confirming that all expected
 channels made it into the stack.
 
