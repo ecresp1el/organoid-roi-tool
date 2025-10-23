@@ -11,7 +11,8 @@ This script represents the third stage of the imaging pipeline:
    exports so downstream tools can trace each file back to its origin. The
    script now also emits multi-channel ZCYX stacks (one TIFF per sample) under
    ``cellpose_multichannel_zcyx`` so Cellpose can ingest combined channels
-   directly.
+   directly. When available, the DAPI reference channel is copied alongside the
+   analysis markers so the segmentation tools always receive a nuclear channel.
 
 If the projection exports or analysis results are missing, the script prints
 clear guidance and aborts so scientists can complete the earlier steps first.
@@ -45,6 +46,15 @@ DEFAULT_ANALYSES = [
     "PCDHvsLHX6_WTvsKO_IHC",
     "NestinvsDcx_WTvsKO_IHC",
 ]
+
+
+_DAPI_TOKENS = {
+    "dapi",
+    "confocal_blue",
+    "confocalblue",
+    "blue",
+    "nuclei",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -178,6 +188,18 @@ def prepare_exports(
                 }
             )
 
+    dapi_records = extend_with_dapi_exports(
+        records,
+        projections_root=projections_root,
+        analysis=analysis,
+        output_root=output_root,
+    )
+    if dapi_records:
+        records.extend(dapi_records)
+        print(
+            f"[export] Added {len(dapi_records)} supplemental DAPI projection(s) for {analysis}."
+        )
+
     return records
 
 
@@ -214,6 +236,118 @@ def _ensure_zyx(arr: np.ndarray, path: Path) -> np.ndarray:
     )
 
 
+def _record_is_dapi(record: dict) -> bool:
+    for key in ("channel_marker", "channel_canonical", "channel", "channel_slug"):
+        value = record.get(key)
+        if isinstance(value, str) and _text_matches_dapi(value):
+            return True
+    return False
+
+
+def _discover_dapi_projections(sample_dir: Path) -> Dict[str, Path]:
+    matches: Dict[str, Path] = {}
+    for tif_path in sample_dir.glob("*.tif"):
+        stem = tif_path.stem
+        projection_match = re.search(r"_(max|mean|median)(?=\.|$)", stem.lower())
+        if not projection_match:
+            continue
+        projection_type = projection_match.group(1)
+        channel_name = stem[: -(len(projection_type) + 1)]
+        if not _text_matches_dapi(channel_name):
+            continue
+        matches.setdefault(projection_type, tif_path)
+    return matches
+
+
+def _text_matches_dapi(value: str) -> bool:
+    slug = _slugify_token(value).lower()
+    plain = re.sub(r"[^0-9a-z]+", "", value.lower())
+    return slug in _DAPI_TOKENS or plain in _DAPI_TOKENS
+
+
+def extend_with_dapi_exports(
+    existing_records: List[dict],
+    *,
+    projections_root: Path,
+    analysis: str,
+    output_root: Path,
+) -> List[dict]:
+    if not projections_root.exists():
+        return []
+
+    supplemental: List[dict] = []
+
+    existing_keys = {
+        (record["sample_id"], record["projection_type"])
+        for record in existing_records
+        if _record_is_dapi(record)
+    }
+
+    sample_map: Dict[str, Dict[str, object]] = {}
+    for record in existing_records:
+        sample_id = record["sample_id"]
+        info = sample_map.setdefault(sample_id, {"group": record["group"], "projections": set()})
+        if record["group"] != info["group"]:  # pragma: no cover - data quality guard
+            print(
+                f"[warn] Sample {sample_id} has conflicting group assignments: {record['group']} vs {info['group']}.",
+            )
+        projections_set = info["projections"]
+        assert isinstance(projections_set, set)
+        projections_set.add(record["projection_type"])
+
+    for sample_id, info in sorted(sample_map.items()):
+        projections_set = info["projections"]
+        assert isinstance(projections_set, set)
+        sample_dir = projections_root / sample_id / "16bit"
+        if not sample_dir.exists():
+            continue
+
+        dapi_by_projection = _discover_dapi_projections(sample_dir)
+        if not dapi_by_projection:
+            continue
+
+        group_value = info["group"]
+        for projection_type in sorted(projections_set):
+            key = (sample_id, projection_type)
+            if key in existing_keys:
+                continue
+
+            dapi_path = dapi_by_projection.get(projection_type)
+            if dapi_path is None:
+                print(
+                    f"[warn] Missing DAPI {projection_type} projection for sample {sample_id} in {sample_dir}.",
+                )
+                continue
+
+            channel_slug = "DAPI_reference"
+            dest_dir = output_root / analysis / channel_slug / str(group_value)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_name = f"{sample_id}__DAPI_{projection_type}.tif"
+            destination = dest_dir / dest_name
+
+            shutil.copy2(dapi_path, destination)
+
+            supplemental.append(
+                {
+                    "analysis": analysis,
+                    "channel_slug": channel_slug,
+                    "channel": "DAPI",
+                    "channel_canonical": "DAPI",
+                    "channel_marker": "DAPI",
+                    "channel_wavelength_nm": "",
+                    "group": group_value,
+                    "sample_id": sample_id,
+                    "projection_type": projection_type,
+                    "filename": dapi_path.name,
+                    "source_path": str(dapi_path),
+                    "export_path": str(destination),
+                    "manifest": "",
+                }
+            )
+
+    return supplemental
+
+
 def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
     if not records:
         print("[cellpose] No exports available for multi-channel merge; skipping.")
@@ -242,9 +376,19 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
 
     for group_key, items in sorted(grouped.items()):
         analysis, group, sample_id, projection_type = group_key
+        channel_names = _channel_summary(items)
+
         if len(items) < 2:
             print(
-                f"[cellpose] Skipping {analysis}/{sample_id}/{projection_type}: requires at least two channels."
+                f"[cellpose] Skipping {analysis}/{sample_id}/{projection_type}: "
+                f"requires at least two channels (found: {channel_names or 'none'})."
+            )
+            continue
+
+        if not any(_record_is_dapi(record) for record in items):
+            print(
+                f"[warn] Skipping {analysis}/{sample_id}/{projection_type}: "
+                f"no DAPI channel detected among {channel_names or 'unknown channels'}."
             )
             continue
 
@@ -311,6 +455,8 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
             metadata={"axes": "ZCYX"},
         )
 
+        _validate_stack_channels(dest_path, channel_records)
+
         merged_rows.append(
             {
                 "analysis": analysis,
@@ -359,6 +505,51 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
         writer.writerows(merged_rows)
 
     print(f"[done] Multi-channel Cellpose metadata written to {csv_path}")
+
+
+def _channel_summary(records: Iterable[dict]) -> str:
+    summary = sorted(
+        {
+            (rec.get("channel_marker") or rec.get("channel_canonical") or rec.get("channel") or "unknown")
+            for rec in records
+        }
+    )
+    return ", ".join(summary)
+
+
+def _validate_stack_channels(path: Path, channel_records: List[dict]) -> None:
+    expected = len(channel_records)
+    expected_summary = ", ".join(
+        _slugify_token(
+            record.get("channel_marker")
+            or record.get("channel_canonical")
+            or record.get("channel")
+        )
+        for record in channel_records
+    )
+
+    try:
+        data = np.asarray(tifffile.imread(path))
+    except Exception as exc:  # pragma: no cover - runtime guard
+        print(f"[warn] Unable to validate {path}: {exc}")
+        return
+
+    if data.ndim == 4:
+        observed_channels = data.shape[1]
+    elif data.ndim == 3:
+        observed_channels = data.shape[0]
+    else:
+        observed_channels = 0
+
+    if observed_channels != expected:
+        print(
+            f"[warn] Channel count mismatch for {path}: expected {expected} ({expected_summary}), "
+            f"observed {observed_channels} with shape {tuple(data.shape)}."
+        )
+    else:
+        print(
+            f"[check] Verified {path.name} with {observed_channels} channel(s): {expected_summary}."
+        )
 
 
 def main() -> int:
