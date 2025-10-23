@@ -48,6 +48,9 @@ DEFAULT_ANALYSES = [
 ]
 
 
+# Common synonyms for the nuclear reference channel. Confocal exports often
+# label the DAPI stack "Confocal - Blue" or similar, so we normalise and check
+# against these tokens instead of relying on an exact match.
 _DAPI_TOKENS = {
     "dapi",
     "confocal_blue",
@@ -188,6 +191,8 @@ def prepare_exports(
                 }
             )
 
+    # Mirror the DAPI projections from simple_projections so Cellpose always
+    # receives the nuclei channel alongside the marker channels.
     dapi_records = extend_with_dapi_exports(
         records,
         projections_root=projections_root,
@@ -237,6 +242,7 @@ def _ensure_zyx(arr: np.ndarray, path: Path) -> np.ndarray:
 
 
 def _record_is_dapi(record: dict) -> bool:
+    """Return True when a metadata record represents the DAPI/nuclear channel."""
     for key in ("channel_marker", "channel_canonical", "channel", "channel_slug"):
         value = record.get(key)
         if isinstance(value, str) and _text_matches_dapi(value):
@@ -245,6 +251,7 @@ def _record_is_dapi(record: dict) -> bool:
 
 
 def _discover_dapi_projections(sample_dir: Path) -> Dict[str, Path]:
+    """Locate per-projection DAPI TIFFs within a 16-bit projection directory."""
     matches: Dict[str, Path] = {}
     for tif_path in sample_dir.glob("*.tif"):
         stem = tif_path.stem
@@ -272,6 +279,7 @@ def extend_with_dapi_exports(
     analysis: str,
     output_root: Path,
 ) -> List[dict]:
+    """Ensure every sample has mirrored DAPI projections in the export tree."""
     if not projections_root.exists():
         return []
 
@@ -285,6 +293,8 @@ def extend_with_dapi_exports(
 
     sample_map: Dict[str, Dict[str, object]] = {}
     for record in existing_records:
+        # Preserve the first group assignment encountered and collect the
+        # projection types so we can look for matching DAPI files later.
         sample_id = record["sample_id"]
         info = sample_map.setdefault(sample_id, {"group": record["group"], "projections": set()})
         if record["group"] != info["group"]:  # pragma: no cover - data quality guard
@@ -392,6 +402,8 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
             )
             continue
 
+        # Sort the records so the stack layout is deterministic and matches the
+        # metadata CSV (helps downstream scripts index channels by position).
         channel_arrays: List[np.ndarray] = []
         channel_records: List[dict] = []
 
@@ -427,6 +439,8 @@ def create_multichannel_stacks(output_root: Path, records: List[dict]) -> None:
             )
             continue
 
+        # Stack the per-channel volumes into a single ZCYX tensor (Cellpose's
+        # preferred dimensional order).
         stack = np.stack(channel_arrays, axis=1)  # Z x C x Y x X
 
         dest_dir = dest_root / analysis / projection_type / str(group)
@@ -518,6 +532,7 @@ def _channel_summary(records: Iterable[dict]) -> str:
 
 
 def _validate_stack_channels(path: Path, channel_records: List[dict]) -> None:
+    """Re-open the saved stack and confirm the channel count matches metadata."""
     expected = len(channel_records)
     expected_summary = ", ".join(
         _slugify_token(

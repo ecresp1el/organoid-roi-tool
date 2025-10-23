@@ -459,6 +459,23 @@ conda activate cellprofiler_env
 cellpose              # launches the Cellpose GUI
 ```
 
+### Export projection stacks for CellProfiler / Cellpose
+
+Run the helper in `simple_projection_tool/prepare_for_cellprofiler_cellpose.py`
+once your `analysis_results/` folders are ready:
+
+```
+conda activate organoid_roi_incucyte_imaging
+python simple_projection_tool/prepare_for_cellprofiler_cellpose.py \
+    --base-path /path/to/project_folder \
+    --analysis PCDHvsLHX6_WTvsKO_IHC
+```
+
+The exporter now mirrors the DAPI (nuclear) projections alongside every marker,
+writes Cellpose-friendly Z×C×Y×X TIFF stacks named `…__LHX6+PCDH19+DAPI.tif`,
+and logs a `[check]` message after each write confirming that all expected
+channels made it into the stack.
+
 The same environment also exposes the command-line tools, e.g. `cellprofiler --help`, `python -m cellpose --help`, etc.
 
 ### Switching between environments

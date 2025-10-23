@@ -148,8 +148,10 @@ pipeline with consistent folder structure and saved outputs.
   layout, markers, aliases). Future contributors can then duplicate the file
   and adjust it with minimal effort.
 - Once an analysis is complete you can hand off to cell segmentation tools via
-  ``prepare_for_cellprofiler_cellpose.py``, which consumes the manifest tables
-  and exports the 16-bit TIFFs grouped by analysis/channel/group.
+  ``prepare_for_cellprofiler_cellpose.py``. The exporter now copies the DAPI
+  (nuclear) channel alongside every marker and writes combined Z×C×Y×X stacks
+  that include DAPI + markers for Cellpose, logging a confirmation when all
+  expected channels are present.
 - Remind end users to verify that the shared drive (e.g. ``/Volumes/Manny4TBUM``)
   is mounted before running a pipeline; otherwise the helper will skip channels
   because the base path is missing.

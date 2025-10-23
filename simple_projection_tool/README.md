@@ -269,7 +269,22 @@ registered analysis). The script confirms that projections and analysis results
 exist, then copies every 16-bit TIFF into
 ``<base-path>/cellprofilerandcellpose_folder/<analysis>/<channel>/<group>/``
 and writes ``cellprofilerandcellpose_metadata.csv`` so each exported file can be
-linked back to its source.
+linked back to its source. As part of the copy step the helper now:
+
+- **Mirrors the DAPI channel automatically.** The exporter scans the original
+  projection folders for anything that looks like a nuclear channel (``DAPI``,
+  ``Confocal_-_Blue``, ``Nuclei``, etc.) and copies the matching max/mean/median
+  TIFFs into a ``DAPI_reference`` channel directory so segmentation tools always
+  receive a nuclei image alongside marker channels.
+- **Builds Cellpose-ready ZCYX stacks.** Every sample with at least two channels
+  (including DAPI) produces a single TIFF per projection type under
+  ``cellpose_multichannel_zcyx/<analysis>/<projection>/<group>/``. The stack is
+  written in Z×C×Y×X order and the filename lists the channels (e.g.
+  ``…__median__LHX6+PCDH19+DAPI.tif``).
+- **Validates the channel count on disk.** After writing each stack the script
+  re-opens the TIFF and logs a ``[check]`` message confirming that the expected
+  number of channels (usually three) is present. A mismatch triggers a warning
+  with the observed shape so you can intervene before handing files to Cellpose.
 
 > **Launching CellProfiler / Cellpose**
 >
