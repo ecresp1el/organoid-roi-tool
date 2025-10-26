@@ -7,7 +7,7 @@ set -euo pipefail
 # ---- DATASET CONFIG (EDIT AS NEEDED) ----
 PROJECT_ROOT="/Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder/cellprofilerandcellpose_folder"
 ANALYSIS="PCDHvsLHX6_WTvsKO_IHC"
-PROJECTION_TYPES=("max" "mean" "median")
+PROJECTION_TYPES=("max")
 GROUPS=("WT" "KO")
 # For single-channel metadata you can narrow the export to specific channel_slugs, e.g.
 # CHANNEL_SLUGS=("LHX6" "PCDH19" "DAPI_reference")
