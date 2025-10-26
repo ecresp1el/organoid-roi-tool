@@ -66,24 +66,37 @@ fi
 
 ANALYSIS_ARGS=()
 if [[ -n "${ANALYSIS}" ]]; then
-  ANALYSIS_ARGS=("--analysis" "${ANALYSIS}")
+  ANALYSIS_ARGS+=("--analysis" "${ANALYSIS}")
 fi
 
 CHANNEL_ARGS=()
-if [[ -n "${CHANNEL_SLUGS+set}" ]]; then
+if [[ -n "${CHANNEL_SLUGS+set}" && ${#CHANNEL_SLUGS[@]} -gt 0 ]]; then
   for slug in "${CHANNEL_SLUGS[@]}"; do
     CHANNEL_ARGS+=("--channel-slug" "${slug}")
   done
 fi
 
-python "${SYMLINK_SCRIPT}" \
-  --metadata "${METADATA_CSV}" \
-  --output "${TRAIN_DIR}" \
-  --clear-output \
-  "${ANALYSIS_ARGS[@]}" \
-  "${PROJECTION_ARGS[@]}" \
-  "${GROUP_ARGS[@]}" \
-  "${CHANNEL_ARGS[@]}"
+SYMLINK_CMD=(
+  python "${SYMLINK_SCRIPT}"
+  --metadata "${METADATA_CSV}"
+  --output "${TRAIN_DIR}"
+  --clear-output
+)
+
+if ((${#ANALYSIS_ARGS[@]})); then
+  SYMLINK_CMD+=("${ANALYSIS_ARGS[@]}")
+fi
+if ((${#PROJECTION_ARGS[@]})); then
+  SYMLINK_CMD+=("${PROJECTION_ARGS[@]}")
+fi
+if ((${#GROUP_ARGS[@]})); then
+  SYMLINK_CMD+=("${GROUP_ARGS[@]}")
+fi
+if ((${#CHANNEL_ARGS[@]})); then
+  SYMLINK_CMD+=("${CHANNEL_ARGS[@]}")
+fi
+
+"${SYMLINK_CMD[@]}"
 
 if ! compgen -G "${TRAIN_DIR}/*.tif" >/dev/null; then
   echo "[ERROR] No TIFFs found in ${TRAIN_DIR} after metadata linking. Check the filters above." >&2
