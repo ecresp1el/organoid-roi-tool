@@ -6,7 +6,9 @@ Batch-create Cellpose *_seg.npy files for all TIFFs in one or more folders.
 - Saves the standard Cellpose *_seg.npy next to each image.
 """
 import argparse
+import logging
 import pathlib
+import sys
 from time import perf_counter
 
 import numpy as np  # noqa: F401  # ensures dependency when scripts are bundled
@@ -35,7 +37,28 @@ def resolve_device():
     return {"gpu": False, "device": None, "label": "cpu", "reason": "no GPU backend detected"}
 
 
-def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob_thresh, model_kwargs, verbose):
+def configure_cellpose_logging(verbose: bool) -> None:
+    """Stream Cellpose logging output to stdout when verbose mode is enabled."""
+    if not verbose:
+        return
+
+    fmt = logging.Formatter("[CELLPOSE] %(message)s")
+    target_loggers = [
+        logging.getLogger("cellpose"),
+        logging.getLogger("cellpose.models"),
+    ]
+    for logger in target_loggers:
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        if not any(getattr(handler, "_cellpose_helper", False) for handler in logger.handlers):
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setLevel(logging.INFO)
+            handler.setFormatter(fmt)
+            handler._cellpose_helper = True  # mark so we do not duplicate
+            logger.addHandler(handler)
+
+
+def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob_thresh, model_kwargs):
     """Segment every TIFF inside ``in_dir`` and save Cellpose outputs next to the images.
 
     Parameters are intentionally explicit so non-programmers can map them back to
@@ -89,7 +112,6 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
             diameter=diameter,
             flow_threshold=flow_thresh,
             cellprob_threshold=cellprob_thresh,
-            verbose=verbose,
         )
         print(
             f"[DEBUG] Eval complete | mask_count={int(masks.max()) if masks.size else 0} "
@@ -138,6 +160,8 @@ def main():
     )
     args = p.parse_args()
 
+    configure_cellpose_logging(args.verbose)
+
     device_info = resolve_device()
     device_label = device_info["label"]
     print(
@@ -167,7 +191,6 @@ def main():
             args.flow_threshold,
             args.cellprob_threshold,
             model_kwargs,
-            args.verbose,
         )
         if ok:
             total_dirs += 1
