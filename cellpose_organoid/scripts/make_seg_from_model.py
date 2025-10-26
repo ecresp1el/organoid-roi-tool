@@ -88,6 +88,7 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
         m = models.CellposeModel(model_type=model_path, **model_kwargs)
     else:
         m = models.CellposeModel(pretrained_model=model_path, **model_kwargs)
+    print(f"[INFO] Cellpose model device: {m.device} (gpu flag={m.gpu})")
     created = 0
 
     for idx, img_path in enumerate(images, start=1):
