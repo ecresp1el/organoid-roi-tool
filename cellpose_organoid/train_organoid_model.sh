@@ -17,6 +17,7 @@ EXPERIMENT_GROUPS=("WT" "KO")
 # For single-channel metadata you can narrow the export to specific channel_slugs, e.g.
 # CHANNEL_SLUGS=("LHX6" "PCDH19" "DAPI_reference")
 CHANNEL_SLUGS=()
+MAKE_SEG_VERBOSE="true"   # set to "false" if you want quieter Cellpose output
 
 # Location of helper scripts (stays inside the repo)
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/cellpose_organoid"
@@ -114,13 +115,20 @@ fi
 
 echo "[2/4] Auto-labeling (creating *_seg.npy) where missing"
 # Generates Cellpose labels for any TIFF in TRAIN_DIR that does not already have a *_seg.npy file.
-python "${SCRIPT_ROOT}/scripts/make_seg_from_model.py" \
-  --dirs "${TRAIN_DIR}" \
-  --model "${MODEL_INIT}" \
-  --diameter "${DIAMETER}" \
-  --chan "${CHAN}" --chan2 "${CHAN2}" \
-  --flow_threshold "${FLOW_THR}" \
+MAKE_SEG_CMD=(
+  python "${SCRIPT_ROOT}/scripts/make_seg_from_model.py"
+  --dirs "${TRAIN_DIR}"
+  --model "${MODEL_INIT}"
+  --diameter "${DIAMETER}"
+  --chan "${CHAN}" --chan2 "${CHAN2}"
+  --flow_threshold "${FLOW_THR}"
   --cellprob_threshold "${CELLP_THR}"
+)
+if [[ "${MAKE_SEG_VERBOSE}" == "true" ]]; then
+  MAKE_SEG_CMD+=(--verbose)
+fi
+
+"${MAKE_SEG_CMD[@]}"
 
 echo "[3/4] Training custom model on ${TRAIN_DIR}"
 # NOTE: Cellpose saves checkpoints into TRAIN_DIR/models/ by default, so we tee the log separately.

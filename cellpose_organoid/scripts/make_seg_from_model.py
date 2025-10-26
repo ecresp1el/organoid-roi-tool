@@ -144,7 +144,7 @@ def main():
         "[INFO] Cellpose device selection: "
         f"{device_label} (gpu={device_info['gpu']} | {device_info['reason']})"
     )
-    model_kwargs = {"gpu": device_info["gpu"], "verbose": args.verbose}
+    model_kwargs = {"gpu": device_info["gpu"]}
     if device_info["device"] is not None:
         model_kwargs["device"] = device_info["device"]
 
