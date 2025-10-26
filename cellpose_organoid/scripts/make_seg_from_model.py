@@ -52,6 +52,11 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
         # ``channels`` tells Cellpose which imaging channel to treat as signal/background.
         # With single-channel projections, ``chan=0`` and ``chan2=0`` means "use grayscale"
         # and "no second channel".
+        print(
+            f"[DEBUG] Calling Cellpose eval | diameter={diameter} "
+            f"| chan={chan} | chan2={chan2} | flow_threshold={flow_thresh} "
+            f"| cellprob_threshold={cellprob_thresh}"
+        )
         masks, flows, styles = m.eval(
             img,
             channels=[chan, chan2],
@@ -59,11 +64,31 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
             flow_threshold=flow_thresh,
             cellprob_threshold=cellprob_thresh,
         )
+        print(
+            f"[DEBUG] Eval complete | mask_count={int(masks.max()) if masks.size else 0} "
+            f"| masks_shape={getattr(masks, 'shape', None)}"
+        )
         # This helper writes the standard Cellpose results (``*_seg.npy`` plus flow files)
         # alongside ``img_path`` so any downstream tool can load them.
-        io.masks_flows_to_seg(img_path, masks, flows, img.shape, img=img)
+        seg_start = perf_counter()
+        # ``save_masks`` persists the Cellpose segmentation results to disk. It writes
+        # the ``*_seg.npy`` file plus the companion ``*_cp_output.npy`` and ``*_mask.npy``.
+        # Older examples used ``masks_flows_to_seg`` but the signature changed in v3,
+        # so we call ``save_masks`` directly to avoid version mismatches.
+        io.save_masks(
+            img_path,
+            masks,
+            flows,
+            img,
+            chan=chan,
+            chan2=chan2,
+        )
+        save_elapsed = perf_counter() - seg_start
         elapsed = perf_counter() - img_start
-        print(f"[OK] {img_path.name} -> {seg_path.name} ({elapsed:.2f}s)")
+        print(
+            f"[OK] {img_path.name} -> {seg_path.name} "
+            f"(eval={elapsed - save_elapsed:.2f}s, save={save_elapsed:.2f}s)"
+        )
         created += 1
 
     dir_elapsed = perf_counter() - dir_start
