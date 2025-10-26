@@ -89,6 +89,12 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
     else:
         m = models.CellposeModel(pretrained_model=model_path, **model_kwargs)
     print(f"[INFO] Cellpose model device: {m.device} (gpu flag={m.gpu})")
+    if getattr(m.device, "type", "") == "mps":
+        print("[INFO] Confirmed: using Apple Silicon GPU via PyTorch MPS backend.")
+    elif getattr(m.device, "type", "") == "cuda":  # pragma: no cover - depends on NVIDIA
+        print("[INFO] Confirmed: using CUDA GPU.")
+    else:
+        print("[WARN] Falling back to CPU; segmentation will be slower.")
     created = 0
 
     for idx, img_path in enumerate(images, start=1):
@@ -125,7 +131,7 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
         # the ``*_seg.npy`` file plus the companion ``*_cp_output.npy`` and ``*_mask.npy``.
         # Older examples used ``masks_flows_to_seg`` but the signature changed in v3,
         # so we call ``save_masks`` directly to avoid version mismatches.
-        io.save_masks(img_path, masks, flows, img)
+        io.save_masks(img, masks, flows, str(img_path), png=False, tif=True, save_flows=True, save_outlines=False)
         save_elapsed = perf_counter() - seg_start
         elapsed = perf_counter() - img_start
         print(
