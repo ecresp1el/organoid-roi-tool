@@ -35,7 +35,7 @@ def resolve_device():
     return {"gpu": False, "device": None, "label": "cpu", "reason": "no GPU backend detected"}
 
 
-def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob_thresh, model_kwargs):
+def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob_thresh, model_kwargs, verbose):
     """Segment every TIFF inside ``in_dir`` and save Cellpose outputs next to the images.
 
     Parameters are intentionally explicit so non-programmers can map them back to
@@ -89,6 +89,7 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
             diameter=diameter,
             flow_threshold=flow_thresh,
             cellprob_threshold=cellprob_thresh,
+            verbose=verbose,
         )
         print(
             f"[DEBUG] Eval complete | mask_count={int(masks.max()) if masks.size else 0} "
