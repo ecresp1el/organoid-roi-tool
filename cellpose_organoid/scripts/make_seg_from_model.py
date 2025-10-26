@@ -131,6 +131,11 @@ def main():
     p.add_argument("--chan2", type=int, default=0, help="Secondary channel (0 = none).")
     p.add_argument("--flow_threshold", type=float, default=0.1, help="Cellpose flow threshold; lower values relax the shape filtering.")
     p.add_argument("--cellprob_threshold", type=float, default=-6.0, help="Cellpose cell probability threshold; negative values favour 'keep everything'.")
+    p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Also print the native Cellpose progress messages (useful for debugging long runs).",
+    )
     args = p.parse_args()
 
     device_info = resolve_device()
@@ -139,7 +144,7 @@ def main():
         "[INFO] Cellpose device selection: "
         f"{device_label} (gpu={device_info['gpu']} | {device_info['reason']})"
     )
-    model_kwargs = {"gpu": device_info["gpu"]}
+    model_kwargs = {"gpu": device_info["gpu"], "verbose": args.verbose}
     if device_info["device"] is not None:
         model_kwargs["device"] = device_info["device"]
 
@@ -162,6 +167,7 @@ def main():
             args.flow_threshold,
             args.cellprob_threshold,
             model_kwargs,
+            args.verbose,
         )
         if ok:
             total_dirs += 1
