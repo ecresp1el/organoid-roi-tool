@@ -14,6 +14,15 @@ from cellpose import io, models
 
 
 def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob_thresh):
+    """Segment every TIFF inside ``in_dir`` and save Cellpose outputs next to the images.
+
+    Parameters are intentionally explicit so non-programmers can map them back to
+    the command-line flags defined in ``main``. The function prints progress
+    messages for every major action and returns simple counters so the caller can
+    build a final summary (total images seen, how many new ``*_seg.npy`` files
+    were created, and whether the directory existed).
+    """
+
     in_dir = pathlib.Path(in_dir)
     if not in_dir.exists():
         print(f"[WARN] Skipping missing dir: {in_dir}")
@@ -27,6 +36,8 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
         return 0, 0, True
 
     print(f"[INFO] Found {len(images)} candidate images")
+    # ``model_path`` accepts either one of the built-in Cellpose presets (cyto3, cyto2, …)
+    # or an absolute path to a custom model folder produced by training.
     m = models.CellposeModel(pretrained_model=model_path) if model_path not in ["cyto3", "cyto2", "cyto3_cp3", "cyto2_cp3"] else models.CellposeModel(model_type=model_path)
     created = 0
 
@@ -38,6 +49,9 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
         img_start = perf_counter()
         print(f"[STEP] [{idx}/{len(images)}] Segmenting {img_path.name}")
         img = io.imread(img_path)
+        # ``channels`` tells Cellpose which imaging channel to treat as signal/background.
+        # With single-channel projections, ``chan=0`` and ``chan2=0`` means "use grayscale"
+        # and "no second channel".
         masks, flows, styles = m.eval(
             img,
             channels=[chan, chan2],
@@ -45,6 +59,8 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
             flow_threshold=flow_thresh,
             cellprob_threshold=cellprob_thresh,
         )
+        # This helper writes the standard Cellpose results (``*_seg.npy`` plus flow files)
+        # alongside ``img_path`` so any downstream tool can load them.
         io.masks_flows_to_seg(img_path, masks, flows, img.shape, img=img)
         elapsed = perf_counter() - img_start
         print(f"[OK] {img_path.name} -> {seg_path.name} ({elapsed:.2f}s)")
@@ -56,14 +72,20 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
 
 
 def main():
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(
+        description=(
+            "Create Cellpose *_seg.npy files for every TIFF in the provided folders. "
+            "Defaults assume single-channel organoid projections where one mask should "
+            "cover the entire structure."
+        )
+    )
     p.add_argument("--dirs", nargs="+", required=True, help="One or more folders with .tif images")
     p.add_argument("--model", default="cyto3", help="cyto3 (default) or path to custom model")
-    p.add_argument("--diameter", type=float, default=1500.0)
-    p.add_argument("--chan", type=int, default=0)
-    p.add_argument("--chan2", type=int, default=0)
-    p.add_argument("--flow_threshold", type=float, default=0.1)
-    p.add_argument("--cellprob_threshold", type=float, default=-6.0)
+    p.add_argument("--diameter", type=float, default=1500.0, help="Approximate object size in pixels (use the same value used during training).")
+    p.add_argument("--chan", type=int, default=0, help="Primary imaging channel (0 = grayscale/single-channel TIFF).")
+    p.add_argument("--chan2", type=int, default=0, help="Secondary channel (0 = none).")
+    p.add_argument("--flow_threshold", type=float, default=0.1, help="Cellpose flow threshold; lower values relax the shape filtering.")
+    p.add_argument("--cellprob_threshold", type=float, default=-6.0, help="Cellpose cell probability threshold; negative values favour 'keep everything'.")
     args = p.parse_args()
 
     overall_start = perf_counter()

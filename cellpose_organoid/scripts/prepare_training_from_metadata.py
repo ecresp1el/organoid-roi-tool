@@ -92,12 +92,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def slugify(value: str, *, allow_period: bool = True) -> str:
+    """Convert free-form text into a filesystem-safe token."""
     pattern = r"[^A-Za-z0-9._-]+" if allow_period else r"[^A-Za-z0-9_-]+"
     token = re.sub(pattern, "_", value.strip()).strip("_")
     return token or "item"
 
 
 def clear_directory(path: Path) -> None:
+    """Remove every file/symlink/subfolder inside ``path``."""
     if not path.exists():
         return
     for entry in path.iterdir():
@@ -108,6 +110,7 @@ def clear_directory(path: Path) -> None:
 
 
 def detect_metadata_kind(fieldnames: Iterable[str]) -> str:
+    """Return ``multi`` if the CSV describes multichannel exports, else ``single``."""
     fields = set(fieldnames)
     if "channel_count" in fields:
         return "multi"
@@ -115,6 +118,7 @@ def detect_metadata_kind(fieldnames: Iterable[str]) -> str:
 
 
 def ensure_columns(fieldnames: Iterable[str], required: Iterable[str]) -> None:
+    """Guard against missing CSV headers so error messages stay human-readable."""
     missing = [name for name in required if name not in fieldnames]
     if missing:
         raise ValueError(f"Metadata CSV is missing required columns: {', '.join(sorted(missing))}.")
@@ -127,6 +131,7 @@ def load_rows(
     groups: Optional[Set[str]],
     channel_slugs: Optional[Set[str]],
 ) -> Tuple[str, List[Dict[str, str]]]:
+    """Load metadata rows and apply optional filters for analysis/projection/group."""
     with csv_path.open(newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
@@ -163,6 +168,11 @@ def load_rows(
 
 
 def ensure_symlink(src: Path, dest: Path, *, dry_run: bool) -> bool:
+    """Create (or reuse) a symlink pointing to ``src``.
+
+    Returns ``True`` when a new link is created. If the destination already links
+    to the correct file we return ``False`` so the caller can track skips.
+    """
     if not dest.parent.exists():
         if dry_run:
             print(f"[dry] mkdir -p {dest.parent}")
@@ -186,6 +196,7 @@ def ensure_symlink(src: Path, dest: Path, *, dry_run: bool) -> bool:
 
 
 def build_dest_name(row: Dict[str, str], src: Path) -> str:
+    """Compose a descriptive filename from metadata (group/sample/projection)."""
     group = slugify(row.get("group", "group"), allow_period=False)
     sample = slugify(row.get("sample_id", "sample"))
     projection = slugify(row.get("projection_type", "proj"), allow_period=False)
@@ -219,20 +230,23 @@ def main() -> int:
         print("[warn] No metadata rows matched the provided filters.")
         return 0
 
+    # Report how much metadata we found and which CSV variant is being used.
     print(
         f"[info] Loaded {len(rows)} metadata rows ({metadata_kind}) "
         f"from {metadata_csv.name}"
     )
 
+    # ``--clear-output`` gives users a clean slate before creating new links.
     if args.clear_output and not args.dry_run:
         clear_directory(output_root)
 
     linked = 0
     skipped = 0
-    group_counts: Dict[str, int] = {}
+    group_counts: Dict[str, int] = {}  # track how many files each group contributes
     missing: List[str] = []
 
     for idx, row in enumerate(rows, start=1):
+        # ``export_path`` stores the absolute TIFF location produced by the exporter.
         src = Path((row.get("export_path") or "").strip()).expanduser()
         if not src.exists():
             missing.append(str(src))
@@ -245,6 +259,7 @@ def main() -> int:
         dest_path = dest_dir / dest_name
 
         try:
+            # ``ensure_symlink`` handles directory creation and avoids clobbering files.
             created = ensure_symlink(src, dest_path, dry_run=args.dry_run)
         except FileExistsError as exc:
             print(f"[warn] {exc}")

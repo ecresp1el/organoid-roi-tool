@@ -152,6 +152,10 @@ pipeline with consistent folder structure and saved outputs.
   (nuclear) channel alongside every marker and writes combined Z×C×Y×X stacks
   that include DAPI + markers for Cellpose, logging a confirmation when all
   expected channels are present.
+- Point collaborators to [`../cellpose_organoid/README.md`](../cellpose_organoid/README.md)
+  when it is time to train or rerun Cellpose. The scripts there live in the repo
+  but write symlinks, logs, and models next to the project data so version
+  control stays clean.
 - Remind end users to verify that the shared drive (e.g. ``/Volumes/Manny4TBUM``)
   is mounted before running a pipeline; otherwise the helper will skip channels
   because the base path is missing.

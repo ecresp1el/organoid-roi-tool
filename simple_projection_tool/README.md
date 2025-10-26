@@ -288,6 +288,12 @@ linked back to its source. As part of the copy step the helper now:
   number of channels (usually three) is present. A mismatch triggers a warning
   with the observed shape so you can intervene before handing files to Cellpose.
 
+Once the exports exist, follow the training guide in
+[`../cellpose_organoid/README.md`](../cellpose_organoid/README.md) to build or
+reuse organoid segmentation models. The helper scripts keep all training artefacts
+alongside the project data (under `cellpose_organoid_workspace/`) so the git
+repository never accumulates large `.npy` or model files.
+
 > **Launching CellProfiler / Cellpose**
 >
 > Use the separate environment described in the root README:

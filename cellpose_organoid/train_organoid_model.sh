@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Train a Cellpose model that segments the ENTIRE organoid as ONE ROI.
 # Uses your existing WT/KO folders as the training set.
+# Steps (printed below as [1/4] ... [4/4]):
+#   1. Link the TIFFs referenced in the metadata CSV into a temporary workspace
+#   2. Auto-generate Cellpose *_seg.npy files if they do not exist yet
+#   3. Train a custom Cellpose model and log the run
+#   4. (Optional) Re-use the new model for a quick smoke-test
 
 set -euo pipefail
 
@@ -47,6 +52,7 @@ FLOW_THR=0.1
 CELLP_THR=-6.0
 EPOCHS=500
 
+# Ensure the workspace folders exist before we start writing anything.
 mkdir -p "${TRAIN_DIR}" "${MODEL_DIR}" "${LOG_DIR}"
 
 echo "[1/4] Preparing training workspace via metadata"
@@ -78,6 +84,7 @@ if [[ -n "${CHANNEL_SLUGS+set}" && ${#CHANNEL_SLUGS[@]} -gt 0 ]]; then
   done
 fi
 
+# Build the Python command as an array so optional filters can be appended safely.
 SYMLINK_CMD=(
   python "${SYMLINK_SCRIPT}"
   --metadata "${METADATA_CSV}"
@@ -106,6 +113,7 @@ if ! compgen -G "${TRAIN_DIR}/*.tif" >/dev/null; then
 fi
 
 echo "[2/4] Auto-labeling (creating *_seg.npy) where missing"
+# Generates Cellpose labels for any TIFF in TRAIN_DIR that does not already have a *_seg.npy file.
 python "${SCRIPT_ROOT}/scripts/make_seg_from_model.py" \
   --dirs "${TRAIN_DIR}" \
   --model "${MODEL_INIT}" \
@@ -115,7 +123,7 @@ python "${SCRIPT_ROOT}/scripts/make_seg_from_model.py" \
   --cellprob_threshold "${CELLP_THR}"
 
 echo "[3/4] Training custom model on ${TRAIN_DIR}"
-# NOTE: Cellpose saves checkpoints into train/models/ by default.
+# NOTE: Cellpose saves checkpoints into TRAIN_DIR/models/ by default, so we tee the log separately.
 python -m cellpose \
   --train \
   --dir "${TRAIN_DIR}" \
@@ -128,7 +136,7 @@ python -m cellpose \
   --n_epochs "${EPOCHS}" | tee "${LOG_DIR}/train_$(date +%Y%m%d_%H%M%S).log"
 
 # Trained weights land in ${TRAIN_DIR}/models/
-# Optionally copy the latest model to a stable location:
+# Optionally copy the latest model to a stable location inside the workspace root:
 LATEST_MODEL_DIR="$(ls -td "${TRAIN_DIR}"/models/* | head -n1 || true)"
 if [[ -n "${LATEST_MODEL_DIR}" ]]; then
   cp -R "${LATEST_MODEL_DIR}" "${MODEL_DIR}/organoid_roi_$(date +%Y%m%d_%H%M%S)"

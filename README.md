@@ -480,6 +480,36 @@ channels made it into the stack.
 
 The same environment also exposes the command-line tools, e.g. `cellprofiler --help`, `python -m cellpose --help`, etc.
 
+### Train the organoid Cellpose model
+
+After the projection exporter runs, follow the dedicated guide in
+`cellpose_organoid/README.md`. In short:
+
+1. Edit `cellpose_organoid/train_organoid_model.sh` so `PROJECT_ROOT`,
+   `ANALYSIS`, `PROJECTION_TYPES`, and `EXPERIMENT_GROUPS` match your dataset.  
+   The script only references helper code inside the repo; all training outputs
+   live next to your project data under
+   `<project>/cellpose_organoid_workspace/`.
+2. Activate the CellProfiler/Cellpose environment:
+   ```
+   conda activate cellprofiler_env
+   ```
+3. Run the end-to-end pipeline:
+   ```
+   bash cellpose_organoid/train_organoid_model.sh
+   ```
+   The script:
+   - Symlinks TIFFs referenced in `cellpose_multichannel_metadata.csv`
+     into the external workspace
+   - Auto-generates `_seg.npy` labels if they are missing (using either a
+     built-in Cellpose model or your last custom model)
+   - Trains a custom “whole organoid” model and archives a timestamped copy
+     under `cellpose_organoid_workspace/models/`
+
+To re-run segmentation on new folders, call
+`python cellpose_organoid/scripts/make_seg_from_model.py --dirs <folders> --model <model_path>`
+from the same environment.
+
 ### Switching between environments
 
 - ROI labeling and project management → `organoid_roi_incucyte_imaging`
