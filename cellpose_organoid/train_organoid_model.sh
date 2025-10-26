@@ -51,14 +51,18 @@ echo "[1/4] Preparing training workspace via metadata"
 SYMLINK_SCRIPT="${WORK}/scripts/prepare_training_from_metadata.py"
 
 PROJECTION_ARGS=()
-for proj in "${PROJECTION_TYPES[@]}"; do
-  PROJECTION_ARGS+=("--projection" "${proj}")
-done
+if [[ -n "${PROJECTION_TYPES+set}" ]]; then
+  for proj in "${PROJECTION_TYPES[@]}"; do
+    PROJECTION_ARGS+=("--projection" "${proj}")
+  done
+fi
 
 GROUP_ARGS=()
-for grp in "${GROUPS[@]}"; do
-  GROUP_ARGS+=("--group" "${grp}")
-done
+if [[ -n "${GROUPS+set}" ]]; then
+  for grp in "${GROUPS[@]}"; do
+    GROUP_ARGS+=("--group" "${grp}")
+  done
+fi
 
 ANALYSIS_ARGS=()
 if [[ -n "${ANALYSIS}" ]]; then
@@ -66,9 +70,11 @@ if [[ -n "${ANALYSIS}" ]]; then
 fi
 
 CHANNEL_ARGS=()
-for slug in "${CHANNEL_SLUGS[@]}"; do
-  CHANNEL_ARGS+=("--channel-slug" "${slug}")
-done
+if [[ -n "${CHANNEL_SLUGS+set}" ]]; then
+  for slug in "${CHANNEL_SLUGS[@]}"; do
+    CHANNEL_ARGS+=("--channel-slug" "${slug}")
+  done
+fi
 
 python "${SYMLINK_SCRIPT}" \
   --metadata "${METADATA_CSV}" \
