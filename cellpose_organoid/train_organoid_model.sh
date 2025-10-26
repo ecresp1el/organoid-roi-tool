@@ -8,17 +8,19 @@ set -euo pipefail
 PROJECT_ROOT="/Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder/cellprofilerandcellpose_folder"
 ANALYSIS="PCDHvsLHX6_WTvsKO_IHC"
 PROJECTION_TYPES=("max")
-GROUPS=("WT" "KO")
+EXPERIMENT_GROUPS=("WT" "KO")
 # For single-channel metadata you can narrow the export to specific channel_slugs, e.g.
 # CHANNEL_SLUGS=("LHX6" "PCDH19" "DAPI_reference")
 CHANNEL_SLUGS=()
 
-# repo-relative workspace (safe to keep inside your repo)
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="${REPO_ROOT}/cellpose_organoid"
-TRAIN_DIR="${WORK}/data/train"
-MODEL_DIR="${WORK}/models"
-LOG_DIR="${WORK}/logs"
+# Location of helper scripts (stays inside the repo)
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/cellpose_organoid"
+
+# Workspace kept alongside the data (outside the git repo)
+WORKSPACE_ROOT="${PROJECT_ROOT}/cellpose_organoid_workspace"
+TRAIN_DIR="${WORKSPACE_ROOT}/data/train"
+MODEL_DIR="${WORKSPACE_ROOT}/models"
+LOG_DIR="${WORKSPACE_ROOT}/logs"
 
 # Metadata CSV emitted by prepare_for_cellprofiler_cellpose.py
 METADATA_MULTI="${PROJECT_ROOT}/cellpose_multichannel_zcyx/cellpose_multichannel_metadata.csv"
@@ -48,7 +50,7 @@ EPOCHS=500
 mkdir -p "${TRAIN_DIR}" "${MODEL_DIR}" "${LOG_DIR}"
 
 echo "[1/4] Preparing training workspace via metadata"
-SYMLINK_SCRIPT="${WORK}/scripts/prepare_training_from_metadata.py"
+SYMLINK_SCRIPT="${SCRIPT_ROOT}/scripts/prepare_training_from_metadata.py"
 
 PROJECTION_ARGS=()
 if [[ -n "${PROJECTION_TYPES+set}" ]]; then
@@ -58,8 +60,8 @@ if [[ -n "${PROJECTION_TYPES+set}" ]]; then
 fi
 
 GROUP_ARGS=()
-if [[ -n "${GROUPS+set}" ]]; then
-  for grp in "${GROUPS[@]}"; do
+if [[ -n "${EXPERIMENT_GROUPS+set}" ]]; then
+  for grp in "${EXPERIMENT_GROUPS[@]}"; do
     GROUP_ARGS+=("--group" "${grp}")
   done
 fi
@@ -104,7 +106,7 @@ if ! compgen -G "${TRAIN_DIR}/*.tif" >/dev/null; then
 fi
 
 echo "[2/4] Auto-labeling (creating *_seg.npy) where missing"
-python "${WORK}/scripts/make_seg_from_model.py" \
+python "${SCRIPT_ROOT}/scripts/make_seg_from_model.py" \
   --dirs "${TRAIN_DIR}" \
   --model "${MODEL_INIT}" \
   --diameter "${DIAMETER}" \
@@ -136,7 +138,7 @@ fi
 echo "[4/4] Quick smoke-test: re-run the trained model on WT & KO (writes *_seg.npy if improved)"
 # If you want to use the newly trained model explicitly, uncomment below and set MODEL_PATH:
 # MODEL_PATH="${MODEL_DIR}/organoid_roi_YYYYMMDD_HHMMSS"   # <- fill with the folder printed above
-# python "${WORK}/scripts/make_seg_from_model.py" \
+# python "${SCRIPT_ROOT}/scripts/make_seg_from_model.py" \
 #   --dirs "${TRAIN_DIR}" \
 #   --model "${MODEL_PATH}" \
 #   --diameter "${DIAMETER}" \
