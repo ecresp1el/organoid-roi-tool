@@ -11,9 +11,31 @@ from time import perf_counter
 
 import numpy as np  # noqa: F401  # ensures dependency when scripts are bundled
 from cellpose import io, models
+try:  # torch is optional until GPU detection is needed
+    import torch
+except ImportError:  # pragma: no cover - environments without torch
+    torch = None
 
 
-def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob_thresh):
+def resolve_device():
+    """Detect the best available device (MPS on Apple Silicon if present)."""
+    if torch is None:
+        return {"gpu": False, "device": None, "label": "cpu", "reason": "torch not installed"}
+
+    # CUDA is unlikely on this workstation, but keep the check for completeness.
+    if torch.cuda.is_available():  # pragma: no cover - depends on NVIDIA hardware
+        name = torch.cuda.get_device_name(torch.cuda.current_device())
+        return {"gpu": True, "device": torch.device("cuda"), "label": f"cuda:{name}", "reason": "CUDA available"}
+
+    # Apple Silicon / Metal Performance Shaders backend
+    mps_available = getattr(torch.backends, "mps", None)
+    if mps_available and mps_available.is_available() and mps_available.is_built():
+        return {"gpu": True, "device": torch.device("mps"), "label": "mps", "reason": "MPS backend available"}
+
+    return {"gpu": False, "device": None, "label": "cpu", "reason": "no GPU backend detected"}
+
+
+def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob_thresh, model_kwargs):
     """Segment every TIFF inside ``in_dir`` and save Cellpose outputs next to the images.
 
     Parameters are intentionally explicit so non-programmers can map them back to
@@ -38,7 +60,11 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
     print(f"[INFO] Found {len(images)} candidate images")
     # ``model_path`` accepts either one of the built-in Cellpose presets (cyto3, cyto2, …)
     # or an absolute path to a custom model folder produced by training.
-    m = models.CellposeModel(pretrained_model=model_path) if model_path not in ["cyto3", "cyto2", "cyto3_cp3", "cyto2_cp3"] else models.CellposeModel(model_type=model_path)
+    model_kwargs = model_kwargs or {}
+    if model_path in ["cyto3", "cyto2", "cyto3_cp3", "cyto2_cp3"]:
+        m = models.CellposeModel(model_type=model_path, **model_kwargs)
+    else:
+        m = models.CellposeModel(pretrained_model=model_path, **model_kwargs)
     created = 0
 
     for idx, img_path in enumerate(images, start=1):
@@ -75,14 +101,7 @@ def run_one_dir(in_dir, model_path, diameter, chan, chan2, flow_thresh, cellprob
         # the ``*_seg.npy`` file plus the companion ``*_cp_output.npy`` and ``*_mask.npy``.
         # Older examples used ``masks_flows_to_seg`` but the signature changed in v3,
         # so we call ``save_masks`` directly to avoid version mismatches.
-        io.save_masks(
-            img_path,
-            masks,
-            flows,
-            img,
-            chan=chan,
-            chan2=chan2,
-        )
+        io.save_masks(img_path, masks, flows, img)
         save_elapsed = perf_counter() - seg_start
         elapsed = perf_counter() - img_start
         print(
@@ -113,6 +132,16 @@ def main():
     p.add_argument("--cellprob_threshold", type=float, default=-6.0, help="Cellpose cell probability threshold; negative values favour 'keep everything'.")
     args = p.parse_args()
 
+    device_info = resolve_device()
+    device_label = device_info["label"]
+    print(
+        "[INFO] Cellpose device selection: "
+        f"{device_label} (gpu={device_info['gpu']} | {device_info['reason']})"
+    )
+    model_kwargs = {"gpu": device_info["gpu"]}
+    if device_info["device"] is not None:
+        model_kwargs["device"] = device_info["device"]
+
     overall_start = perf_counter()
     print(
         "[START] Generating Cellpose segmentations "
@@ -131,6 +160,7 @@ def main():
             args.chan2,
             args.flow_threshold,
             args.cellprob_threshold,
+            model_kwargs,
         )
         if ok:
             total_dirs += 1
