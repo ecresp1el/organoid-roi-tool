@@ -22,8 +22,23 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 
 os.environ.setdefault("NAPARI_DISABLE_PLUGIN_HOOKS", "1")
+os.environ.setdefault("NAPARI_NO_TENSORSTORE", "1")
 
-import napari  # type: ignore  # noqa: E402
+try:  # napari / dask expect the backport even on Python >= 3.11
+    import importlib_metadata  # type: ignore
+except Exception:  # pragma: no cover
+    import importlib.metadata as importlib_metadata  # type: ignore[attr-defined]
+    import sys
+
+    sys.modules.setdefault("importlib_metadata", importlib_metadata)
+
+try:
+    import napari  # type: ignore  # noqa: E402
+except ModuleNotFoundError as exc:  # pragma: no cover
+    raise RuntimeError(
+        "napari is required for the manual mask GUI. Install it in the active environment, e.g.\n"
+        '  pip install "napari[all]"'
+    ) from exc
 import numpy as np
 import tifffile
 from skimage.draw import polygon
