@@ -32,10 +32,10 @@ import pandas as pd
 import tifffile as tiff
 
 try:
-    from scipy import stats  # type: ignore
+    from scipy.stats import mannwhitneyu, ttest_ind  # type: ignore
 except ImportError as exc:  # pragma: no cover - environment dependent
     raise RuntimeError(
-        "scipy is required for statistical tests. Install it in the active conda environment."
+        "scipy (with scipy.stats.ttest_ind / mannwhitneyu) is required. Install it in the analysis environment."
     ) from exc
 
 
@@ -165,12 +165,12 @@ def analyse_rows(subset: pd.DataFrame, single_lookup: Optional[pd.DataFrame]) ->
         data = ensure_channel_first(stack, int(row.channel_count))
 
         try:
-            mask = np.load(mask_path)
+            mask = np.load(mask_path, allow_pickle=True)
         except Exception as exc:
             print(f"[WARN] Failed to load mask {mask_path}: {exc}")
             continue
 
-        mask_bool = np.squeeze(mask) > 0
+        mask_bool = extract_mask_array(mask)
         if mask_bool.ndim != 2:
             print(f"[WARN] Unexpected mask shape {mask_bool.shape} for {mask_path}; skipping.")
             continue
@@ -345,8 +345,8 @@ def compare_groups(df: pd.DataFrame) -> Optional[pd.DataFrame]:
         ko = projection_df.loc[projection_df["group"] == "KO", "pixel_mean"].astype(float).to_numpy()
         if wt.size == 0 or ko.size == 0:
             continue
-        t_stat, t_p = stats.ttest_ind(wt, ko, equal_var=False)
-        u_stat, u_p = stats.mannwhitneyu(wt, ko, alternative="two-sided")
+        t_stat, t_p = ttest_ind(wt, ko, equal_var=False)
+        u_stat, u_p = mannwhitneyu(wt, ko, alternative="two-sided")
         comparisons.append(
             {
                 "projection_type": projection_type,
@@ -428,6 +428,22 @@ def plot_projection_summary(projection_df: pd.DataFrame, channel_slug: str, proj
 
 def slugify(value: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")
+
+
+def extract_mask_array(mask_obj: np.ndarray) -> np.ndarray:
+    """Return a boolean 2-D mask from a Cellpose *_seg.npy payload."""
+
+    if isinstance(mask_obj, np.ndarray) and mask_obj.dtype == object:
+        if mask_obj.shape == ():
+            payload = mask_obj.item()
+        else:  # list-like of dicts; take first element
+            payload = mask_obj.ravel()[0]
+        if isinstance(payload, dict):
+            masks = payload.get("masks")
+            if masks is None:
+                raise ValueError("Missing 'masks' entry in Cellpose payload.")
+            return np.squeeze(np.asarray(masks)) > 0
+    return np.squeeze(np.asarray(mask_obj)) > 0
 
 
 if __name__ == "__main__":
