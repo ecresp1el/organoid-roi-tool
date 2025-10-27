@@ -37,6 +37,7 @@ the shared logic that lives in this folder.
 | `scripts/prepare_training_from_metadata.py` | Reads the metadata CSV and symlinks the selected TIFFs into a training folder. |
 | `scripts/make_seg_from_model.py` | Runs a Cellpose model on one or more folders, generating the standard `*_seg.npy` files. |
 | `train_organoid_model.sh` | End-to-end pipeline: link training data, generate labels (if missing), train a custom model, and archive the results. |
+| `analyse_whole_organoid.py` | Summarise manually curated `_seg.npy` masks (WT vs KO tables/plots) using the multi-channel TIFF stacks. |
 
 ---
 
@@ -82,6 +83,24 @@ then save the results. The GUI writes the standard
 `*_seg.npy`, `*_cp_masks.png`, and flow files next to each image in place. When
 these exist, the automation in Step 2 recognises them and skips re-generating
 labels, so the manual masks take precedence.
+
+### Analyse manual whole-organoid masks
+
+Once the GUI has saved `_seg.npy` files, recreate the WT vs KO summary tables
+and plots with:
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC \
+  --projection max
+```
+
+Outputs are stored in
+`<base>/analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/`
+with the same per-channel CSVs and summary figures used elsewhere in the
+project.
 
 ---
 
