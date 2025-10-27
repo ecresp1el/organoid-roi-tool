@@ -106,6 +106,20 @@ inspect the pixels each mask captures. Combined WT vs KO panels use the WT
 intensity distribution (1st–99th percentile) to set the shared color scale,
 making between-group changes obvious.
 
+If you want to reuse the same ROI for the `mean` or `median` projections, run
+the helper after saving masks in the `max` folder:
+
+```bash
+python cellpose_organoid/copy_max_masks.py \
+  --base-path /path/to/project \
+  --analysis YOUR_ANALYSIS_NAME \
+  --include-png
+```
+
+This duplicates each `_seg.npy` (and optional `_cp_masks.png`) into the sibling
+projection directories with the correct naming convention, so
+`analyse_whole_organoid.py` can process all projection types using the same ROI.
+
 Need to reuse the same ROI across `mean`/`median` projections? Copy the masks
 from `max` once:
 

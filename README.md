@@ -523,7 +523,7 @@ python cellpose_organoid/copy_max_masks.py \
   --analysis NestinvsDcx_WTvsKO_IHC
 ```
 
-After the helpers populate the sibling directories, you can run
+After the helper populates the sibling directories, you can run
 `analyse_whole_organoid.py` with `--projection mean` / `median` without redrawing
 ROIs.
 

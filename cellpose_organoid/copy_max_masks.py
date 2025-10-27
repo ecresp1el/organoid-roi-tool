@@ -82,6 +82,8 @@ def main() -> None:
                     src_file = src
                     dest_name = src_file.name.replace("__max__", f"__{projection}__")
                     dest = dest_dir / dest_name
+                    # Early versions of this helper produced names like
+                    # ``*_seg_seg.npy``. Normalise those in-place before copy.
                     wrong_name = dest_dir / f"{stem}{suffix}"
                     if wrong_name.exists() and not dest.exists():
                         print(f"[FIX] Renaming legacy file {wrong_name.name} -> {dest.name}")
