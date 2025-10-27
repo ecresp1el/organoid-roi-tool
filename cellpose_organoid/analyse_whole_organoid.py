@@ -308,6 +308,7 @@ def save_channel_outputs(channel_slug: str, df: pd.DataFrame, pipeline_root: Pat
             fig.savefig(figures_dir / f"{channel_slug}_{projection_type}_pixel_mean_summary.svg", dpi=300)
             plt.close(fig)
             generate_group_panels(projection_df, channel_slug, projection_type, figures_dir)
+            generate_combined_panel(projection_df, channel_slug, projection_type, figures_dir)
 
 
 def summarise_groups(df: pd.DataFrame) -> pd.DataFrame:
@@ -534,6 +535,134 @@ def generate_group_panels(
         saved_paths.extend([png_path, svg_path])
 
     return saved_paths
+
+
+def generate_combined_panel(
+    projection_df: pd.DataFrame,
+    channel_slug: str,
+    projection_type: str,
+    figures_dir: Path,
+) -> Optional[Path]:
+    """Create a 2xN panel normalised to WT intensity."""
+
+    # Separate WT and KO rows
+    wt_df = projection_df.loc[projection_df["group"] == "WT"].sort_values("sample_id")
+    ko_df = projection_df.loc[projection_df["group"] == "KO"].sort_values("sample_id")
+    if wt_df.empty or ko_df.empty:
+        return None
+
+    wt_images, wt_masks, wt_labels, wt_pixels = load_masked_images(wt_df)
+    ko_images, ko_masks, ko_labels, ko_pixels = load_masked_images(ko_df)
+    if not wt_images or not ko_images:
+        return None
+
+    wt_all = np.concatenate(wt_pixels)
+    vmin = float(np.percentile(wt_all, 1))
+    vmax = float(np.percentile(wt_all, 99))
+    if not np.isfinite(vmin) or not np.isfinite(vmax):
+        vmin, vmax = float(np.nanmin(wt_all)), float(np.nanmax(wt_all))
+    if vmin == vmax:
+        vmax = vmin + 1e-6
+
+    n_wt = len(wt_images)
+    n_ko = len(ko_images)
+    n_cols = max(n_wt, n_ko)
+
+    fig, axes = plt.subplots(
+        2,
+        n_cols,
+        figsize=(max(3 * n_cols, 4), 6),
+        squeeze=False,
+    )
+    im = None
+
+    def draw_row(ax_row, images, masks):
+        nonlocal im
+        for ax, img, mask in zip(ax_row, images, masks):
+            masked_display = np.ma.array(img, mask=~mask)
+            im = ax.imshow(masked_display, cmap="viridis", vmin=vmin, vmax=vmax)
+            ax.axis("off")
+        for ax in ax_row[len(images) :]:
+            ax.axis("off")
+
+    draw_row(axes[0], wt_images, wt_masks)
+    draw_row(axes[1], ko_images, ko_masks)
+
+    if im is not None:
+        fig.subplots_adjust(right=0.88)
+        cbar_ax = fig.add_axes([0.9, 0.2, 0.02, 0.6])
+        fig.colorbar(im, cax=cbar_ax, label="Intensity (a.u.) [WT-normalised]")
+
+    axes[0][0].set_ylabel("WT", fontsize=12)
+    axes[1][0].set_ylabel("KO", fontsize=12)
+
+    fig.suptitle(f"{channel_slug} – {projection_type.upper()} – WT vs KO (WT-normalised)", fontsize=14)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        fig.tight_layout(rect=[0, 0, 0.88, 1])
+
+    base_name = f"{channel_slug}_{projection_type}_WT_vs_KO_panels"
+    png_path = figures_dir / f"{base_name}.png"
+    svg_path = figures_dir / f"{base_name}.svg"
+    fig.savefig(png_path, dpi=300)
+    fig.savefig(svg_path, dpi=300)
+    plt.close(fig)
+    return png_path
+
+
+def load_masked_images(group_df: pd.DataFrame):
+    images: List[np.ndarray] = []
+    masks: List[np.ndarray] = []
+    labels: List[str] = []
+    pixel_samples: List[np.ndarray] = []
+
+    for row in group_df.itertuples():
+        export_path = Path(row.export_path)
+        mask_path = Path(row.mask_path)
+
+        try:
+            stack = tiff.imread(export_path)
+        except Exception as exc:
+            print(f"[WARN] Combined panel skipped; failed to read {export_path}: {exc}")
+            continue
+
+        channels_value = getattr(row, "channel_labels", "")
+        channel_labels = [part.strip() for part in str(channels_value).split("|") if part.strip()]
+        expected_channels = int(getattr(row, "channel_count", len(channel_labels) or stack.shape[0]))
+
+        try:
+            channel_data_all = ensure_channel_first(stack, expected_channels)
+        except Exception as exc:
+            print(f"[WARN] Combined panel skipped; channel alignment failed for {export_path}: {exc}")
+            continue
+
+        channel_idx = int(getattr(row, "channel_index", 0))
+        if channel_idx >= channel_data_all.shape[0]:
+            print(f"[WARN] Combined panel skipped; channel index {channel_idx} out of bounds for {export_path}")
+            continue
+
+        try:
+            mask_obj = np.load(mask_path, allow_pickle=True)
+        except Exception as exc:
+            print(f"[WARN] Combined panel skipped; failed to load mask {mask_path}: {exc}")
+            continue
+
+        mask_bool = extract_mask_array(mask_obj)
+        if mask_bool.shape != channel_data_all[channel_idx].shape:
+            print(f"[WARN] Combined panel skipped; mask shape {mask_bool.shape} does not match data {channel_data_all[channel_idx].shape}")
+            continue
+
+        channel_data = channel_data_all[channel_idx].astype(np.float64, copy=False)
+        masked_pixels = channel_data[mask_bool]
+        if masked_pixels.size == 0:
+            continue
+
+        images.append(channel_data)
+        masks.append(mask_bool)
+        labels.append(str(row.sample_id))
+        pixel_samples.append(masked_pixels)
+
+    return images, masks, labels, pixel_samples
 
 
 def slugify(value: str) -> str:
