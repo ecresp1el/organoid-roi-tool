@@ -65,7 +65,12 @@ def parse_args() -> argparse.Namespace:
         description=(
             "Prepare 16-bit projection TIFFs for automated segmentation tools. "
             "Requires that simple_channel_projections and run_projection_analysis "
-            "have already been executed for the target dataset."
+            "have already been executed for the target dataset.\n\n"
+            "Example usage:\n"
+            "  conda activate organoid_roi_incucyte_imaging\n"
+            "  python simple_projection_tool/prepare_for_cellprofiler_cellpose.py \\\n"
+            "      --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \\\n"
+            "      --analysis NestinvsDcx_WTvsKO_IHC\n"
         )
     )
     parser.add_argument(
