@@ -115,6 +115,8 @@ fi
 
 echo "[2/4] Auto-labeling (creating *_seg.npy) where missing"
 # Generates Cellpose labels for any TIFF in TRAIN_DIR that does not already have a *_seg.npy file.
+# If you already saved masks manually via the Cellpose GUI, those *_seg.npy files
+# live alongside the TIFFs and this step immediately skips them.
 MAKE_SEG_CMD=(
   python "${SCRIPT_ROOT}/scripts/make_seg_from_model.py"
   --dirs "${TRAIN_DIR}"

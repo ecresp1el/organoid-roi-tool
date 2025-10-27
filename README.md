@@ -506,6 +506,14 @@ After the projection exporter runs, follow the dedicated guide in
    - Trains a custom “whole organoid” model and archives a timestamped copy
      under `cellpose_organoid_workspace/models/`
 
+   Prefer to create masks manually? Launch the Cellpose GUI (`cellpose` inside
+   `cellprofiler_env`), open the `WT` and `KO` folders under
+   `<project>/cellpose_multichannel_zcyx/<analysis>/<projection>/`, and save the
+   outputs with your chosen parameters (e.g. diameter = 1500, flow threshold = 0.1,
+   cellprob threshold = ‑0.6). The GUI writes `_seg.npy`, `_cp_masks.png`, and flow
+   files alongside each TIFF, and the training script automatically detects these
+   existing masks so it does not overwrite them.
+
 To re-run segmentation on new folders, call
 `python cellpose_organoid/scripts/make_seg_from_model.py --dirs <folders> --model <model_path>`
 from the same environment.

@@ -65,6 +65,24 @@ the shared logic that lives in this folder.
    - Pass `--model` with either a Cellpose preset (e.g. `cyto3`) or a custom
      model folder exported by the training script.
 
+### Manual mask creation (Cellpose GUI)
+
+If you prefer to draw or verify masks manually, launch the Cellpose GUI from the
+same `cellprofiler_env` environment:
+
+```bash
+conda activate cellprofiler_env
+cellpose
+```
+
+Open the `WT` and `KO` folders under  
+`<project>/cellpose_multichannel_zcyx/<analysis>/<projection>/`, set the diameter
+to **1500**, `flow_threshold` to **0.1**, and `cellprob_threshold` to **-0.6`,
+then save the results. The GUI writes the standard
+`*_seg.npy`, `*_cp_masks.png`, and flow files next to each image in place. When
+these exist, the automation in Step 2 recognises them and skips re-generating
+labels, so the manual masks take precedence.
+
 ---
 
 ## Running Just the Helpers
@@ -99,4 +117,3 @@ pipeline is doing.
 - Training logs are timestamped, so you can keep multiple runs if desired.
 - The git repository stays clean because no training artifacts are written
   under `cellpose_organoid/`.
-

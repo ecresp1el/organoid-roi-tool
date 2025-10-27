@@ -293,6 +293,12 @@ Once the exports exist, follow the training guide in
 reuse organoid segmentation models. The helper scripts keep all training artefacts
 alongside the project data (under `cellpose_organoid_workspace/`) so the git
 repository never accumulates large `.npy` or model files.
+If you switch to manual labeling in the Cellpose GUI (common when refining
+individual organoids), open the same projection folders, adjust the parameters
+as needed (e.g. diameter = 1500, flow threshold = 0.1, cellprob = ‑0.6), and save.
+The GUI writes the `_seg.npy`/`_cp_masks.png` files next to each TIFF; automated
+scripts detect those and skip regeneration, so both manual and automatic routes
+share the same on-disk layout.
 
 > **Launching CellProfiler / Cellpose**
 >
