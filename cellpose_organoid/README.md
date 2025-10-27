@@ -38,7 +38,6 @@ the shared logic that lives in this folder.
 | `scripts/make_seg_from_model.py` | Runs a Cellpose model on one or more folders, generating the standard `*_seg.npy` files. |
 | `train_organoid_model.sh` | End-to-end pipeline: link training data, generate labels (if missing), train a custom model, and archive the results. |
 | `analyse_whole_organoid.py` | Summarise manually curated `_seg.npy` masks (WT vs KO tables/plots) using the multi-channel TIFF stacks. |
-| `manual_mask_gui.py` | Draw whole-organoid masks with napari and save Cellpose-compatible `_seg.npy` / `_cp_masks.png`. |
 
 ---
 
@@ -105,24 +104,6 @@ project, plus per-group masked-intensity panels (WT and KO) so you can visually
 inspect the pixels each mask captures. Combined WT vs KO panels use the WT
 intensity distribution (1st–99th percentile) to set the shared color scale,
 making between-group changes obvious.
-
-### Quick manual mask GUI
-
-When Cellpose inference is unnecessary (or too slow), annotate the ROI directly:
-
-```bash
-conda activate organoid_roi_incucyte_imaging
-python cellpose_organoid/manual_mask_gui.py \
-  --dir /path/to/cellpose_multichannel_zcyx/<analysis>/<projection>
-```
-
-You can also omit `--dir` and the script will open a folder picker (or provide
-`--image-path` for a single TIFF). Draw one polygon per organoid, then press `S`
-(or close the window) to save. The script writes `*_seg.npy` and
-`*_cp_masks.png` next to each TIFF using the same payload format that Cellpose
-produces, so downstream tooling treats manual and automatic masks identically.
-
----
 
 ## Running Just the Helpers
 
