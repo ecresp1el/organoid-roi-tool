@@ -514,6 +514,23 @@ After the projection exporter runs, follow the dedicated guide in
    files alongside each TIFF, and the training script automatically detects these
    existing masks so it does not overwrite them.
 
+### Analyse manual masks
+
+Once the GUI has saved `_seg.npy` files you can reproduce the WT vs KO tables,
+plots, and new masked-intensity panel figures with:
+
+```
+conda activate organoid_roi_incucyte_imaging
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC \
+  --projection max
+```
+
+Outputs land in
+`<base>/analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/`
+mirroring the original projection analyses.
+
 To re-run segmentation on new folders, call
 `python cellpose_organoid/scripts/make_seg_from_model.py --dirs <folders> --model <model_path>`
 from the same environment.

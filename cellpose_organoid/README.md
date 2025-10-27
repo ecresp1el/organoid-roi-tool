@@ -100,7 +100,8 @@ python cellpose_organoid/analyse_whole_organoid.py \
 Outputs are stored in
 `<base>/analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/`
 with the same per-channel CSVs and summary figures used elsewhere in the
-project.
+project, plus per-group masked-intensity panels (WT and KO) so you can visually
+inspect the pixels each mask captures.
 
 ---
 

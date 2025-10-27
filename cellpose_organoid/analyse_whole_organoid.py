@@ -216,6 +216,8 @@ def analyse_rows(subset: pd.DataFrame, single_lookup: Optional[pd.DataFrame]) ->
                 "channel_canonical": meta.canonical,
                 "channel_marker": meta.marker,
                 "channel_wavelength_nm": meta.wavelength_nm,
+                "channel_labels": "|".join(channel_labels),
+                "channel_count": data.shape[0],
                 **stats_dict,
             }
             records.append(record)
@@ -293,18 +295,19 @@ def save_channel_outputs(channel_slug: str, df: pd.DataFrame, pipeline_root: Pat
     if not summary.empty:
         summary.to_csv(data_dir / "group_summary.csv", index=False)
 
-    comparisons = compare_groups(df)
-    if comparisons is not None and not comparisons.empty:
-        comparisons.to_csv(data_dir / "group_comparisons.csv", index=False)
+        comparisons = compare_groups(df)
+        if comparisons is not None and not comparisons.empty:
+            comparisons.to_csv(data_dir / "group_comparisons.csv", index=False)
 
-    for (projection_type), projection_df in df.groupby("projection_type"):
-        fig = plot_projection_summary(projection_df, channel_slug, projection_type)
-        if fig is None:
-            continue
-        fig_path = figures_dir / f"{channel_slug}_{projection_type}_pixel_mean_summary.png"
-        fig.savefig(fig_path, dpi=300)
-        fig.savefig(figures_dir / f"{channel_slug}_{projection_type}_pixel_mean_summary.svg", dpi=300)
-        plt.close(fig)
+        for (projection_type), projection_df in df.groupby("projection_type"):
+            fig = plot_projection_summary(projection_df, channel_slug, projection_type)
+            if fig is None:
+                continue
+            fig_path = figures_dir / f"{channel_slug}_{projection_type}_pixel_mean_summary.png"
+            fig.savefig(fig_path, dpi=300)
+            fig.savefig(figures_dir / f"{channel_slug}_{projection_type}_pixel_mean_summary.svg", dpi=300)
+            plt.close(fig)
+            generate_group_panels(projection_df, channel_slug, projection_type, figures_dir)
 
 
 def summarise_groups(df: pd.DataFrame) -> pd.DataFrame:
@@ -424,6 +427,114 @@ def plot_projection_summary(projection_df: pd.DataFrame, channel_slug: str, proj
     )
     fig.tight_layout()
     return fig
+
+
+def generate_group_panels(
+    projection_df: pd.DataFrame,
+    channel_slug: str,
+    projection_type: str,
+    figures_dir: Path,
+) -> List[Path]:
+    """Create per-group image panels showing masked intensities."""
+
+    saved_paths: List[Path] = []
+    groups = sorted(projection_df["group"].unique())
+    for group in groups:
+        group_df = projection_df.loc[projection_df["group"] == group].sort_values("sample_id")
+        if group_df.empty:
+            continue
+
+        images: List[np.ndarray] = []
+        masks: List[np.ndarray] = []
+        labels: List[str] = []
+        pixel_samples: List[np.ndarray] = []
+
+        for row in group_df.itertuples():
+            export_path = Path(row.export_path)
+            mask_path = Path(row.mask_path)
+
+            try:
+                stack = tiff.imread(export_path)
+            except Exception as exc:
+                print(f"[WARN] Panel skipped; failed to read {export_path}: {exc}")
+                continue
+
+            channels_value = getattr(row, "channel_labels", "")
+            channel_labels = [part.strip() for part in str(channels_value).split("|") if part.strip()]
+            expected_channels = int(getattr(row, "channel_count", len(channel_labels) or stack.shape[0]))
+
+            try:
+                channel_data_all = ensure_channel_first(stack, expected_channels)
+            except Exception as exc:
+                print(f"[WARN] Panel skipped; channel alignment failed for {export_path}: {exc}")
+                continue
+
+            channel_idx = int(getattr(row, "channel_index", 0))
+            if channel_idx >= channel_data_all.shape[0]:
+                print(f"[WARN] Panel skipped; channel index {channel_idx} out of bounds for {export_path}")
+                continue
+
+            try:
+                mask_obj = np.load(mask_path, allow_pickle=True)
+            except Exception as exc:
+                print(f"[WARN] Panel skipped; failed to load mask {mask_path}: {exc}")
+                continue
+
+            mask_bool = extract_mask_array(mask_obj)
+            if mask_bool.shape != channel_data_all[channel_idx].shape:
+                print(f"[WARN] Panel skipped; mask shape {mask_bool.shape} does not match data {channel_data_all[channel_idx].shape}")
+                continue
+
+            channel_data = channel_data_all[channel_idx].astype(np.float64, copy=False)
+            masked_pixels = channel_data[mask_bool]
+            if masked_pixels.size == 0:
+                continue
+
+            images.append(channel_data)
+            masks.append(mask_bool)
+            labels.append(str(row.sample_id))
+            pixel_samples.append(masked_pixels)
+
+        if not images:
+            continue
+
+        all_pixels = np.concatenate(pixel_samples)
+        vmin = float(np.percentile(all_pixels, 1))
+        vmax = float(np.percentile(all_pixels, 99))
+        if not np.isfinite(vmin) or not np.isfinite(vmax):
+            vmin, vmax = float(np.nanmin(all_pixels)), float(np.nanmax(all_pixels))
+        if vmin == vmax:
+            vmax = vmin + 1e-6
+
+        n_cols = len(images)
+        fig, axes = plt.subplots(1, n_cols, figsize=(max(3 * n_cols, 4), 4), squeeze=False)
+        im = None
+        for ax, img, mask, label in zip(axes[0], images, masks, labels):
+            masked_display = np.ma.array(img, mask=~mask)
+            im = ax.imshow(masked_display, cmap="viridis", vmin=vmin, vmax=vmax)
+            ax.set_title(label, fontsize=10)
+            ax.axis("off")
+
+        if im is not None:
+            fig.subplots_adjust(right=0.88)
+            cbar_ax = fig.add_axes([0.9, 0.2, 0.02, 0.6])
+            fig.colorbar(im, cax=cbar_ax, label="Intensity (a.u.)")
+
+        fig.suptitle(f"{channel_slug} – {projection_type.upper()} – {group}", fontsize=14)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            fig.tight_layout(rect=[0, 0, 0.88, 1])
+
+        base_name = f"{channel_slug}_{projection_type}_{group}_masked_panels"
+        png_path = figures_dir / f"{base_name}.png"
+        svg_path = figures_dir / f"{base_name}.svg"
+        fig.savefig(png_path, dpi=300)
+        fig.savefig(svg_path, dpi=300)
+        plt.close(fig)
+
+        saved_paths.extend([png_path, svg_path])
+
+    return saved_paths
 
 
 def slugify(value: str) -> str:
