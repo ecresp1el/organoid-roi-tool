@@ -5,7 +5,7 @@ Draw whole-organoid masks by hand and save Cellpose-compatible outputs.
 Example:
     conda activate organoid_roi_incucyte_imaging
     python cellpose_organoid/manual_mask_gui.py \\
-        --input-dir /Volumes/.../cellpose_multichannel_zcyx/PCDHvsLHX6_WTvsKO_IHC/max
+        --dir /Volumes/.../cellpose_multichannel_zcyx/PCDHvsLHX6_WTvsKO_IHC/max
 
 For each TIFF the script opens a napari viewer. Add one or more polygon shapes
 that outline the entire organoid, then press ``S`` (or close the window) to save.
@@ -17,10 +17,13 @@ exactly like automatic outputs.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 
-import napari  # type: ignore
+os.environ.setdefault("NAPARI_DISABLE_PLUGIN_HOOKS", "1")
+
+import napari  # type: ignore  # noqa: E402
 import numpy as np
 import tifffile
 from skimage.draw import polygon
@@ -48,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Directory containing TIFF images (e.g. cellpose_multichannel_zcyx/.../max). "
-        "Optional when using the GUI picker.",
+        "Optional; if omitted a file dialog will ask for a file or folder.",
     )
     parser.add_argument(
         "--image-path",
@@ -150,9 +153,15 @@ def resolve_image_paths(args: argparse.Namespace) -> List[Path]:
         path = args.image_path.expanduser().resolve()
         if not path.exists():
             raise FileNotFoundError(f"Image not found: {path}")
+        if path.is_dir():
+            return list(iter_image_paths(path, args.glob, args.recursive))
         return [path]
 
-    root = args.input_dir.expanduser().resolve() if args.input_dir else prompt_for_directory()
+    if args.input_dir is not None:
+        root = args.input_dir.expanduser().resolve()
+    else:
+        root = prompt_for_path()
+
     if root is None:
         return []
 
@@ -180,21 +189,27 @@ def iter_image_paths(root: Path, pattern: str, recursive: bool) -> Iterable[Path
                 yield path
 
 
-def prompt_for_directory() -> Optional[Path]:
+def prompt_for_path() -> Optional[Path]:
     app = QtWidgets.QApplication.instance()
     created_app = False
     if app is None:
         app = QtWidgets.QApplication([])
         created_app = True
-
-    selected = QtWidgets.QFileDialog.getExistingDirectory(
+    dialog = QtWidgets.QFileDialog(
         None,
-        "Select folder containing TIFF images",
+        "Select TIFF file or folder",
         str(Path.home()),
     )
+    dialog.setFileMode(QtWidgets.QFileDialog.FileMode.ExistingFile)
+    dialog.setNameFilter("TIFF images (*.tif *.tiff);;All files (*.*)")
+    dialog.setOption(QtWidgets.QFileDialog.Option.DontUseNativeDialog, False)
+    if dialog.exec():
+        selected_files = dialog.selectedFiles()
+        selected = selected_files[0] if selected_files else ""
+    else:
+        selected = ""
 
     if created_app:
-        # We created a temporary QApp solely for the dialog; no need to keep it alive.
         app.quit()
 
     if selected:
