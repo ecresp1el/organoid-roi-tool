@@ -509,10 +509,9 @@ def generate_group_panels(
         n_cols = len(images)
         fig, axes = plt.subplots(1, n_cols, figsize=(max(3 * n_cols, 4), 4), squeeze=False)
         im = None
-        for ax, img, mask, label in zip(axes[0], images, masks, labels):
+        for ax, img, mask in zip(axes[0], images, masks):
             masked_display = np.ma.array(img, mask=~mask)
             im = ax.imshow(masked_display, cmap="viridis", vmin=vmin, vmax=vmax)
-            ax.set_title(label, fontsize=10)
             ax.axis("off")
 
         if im is not None:
