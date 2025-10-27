@@ -33,9 +33,9 @@ import tifffile as tiff
 
 try:
     from scipy.stats import mannwhitneyu, ttest_ind  # type: ignore
-except ImportError as exc:  # pragma: no cover - environment dependent
+except Exception as exc:  # pragma: no cover - environment dependent
     raise RuntimeError(
-        "scipy (with scipy.stats.ttest_ind / mannwhitneyu) is required. Install it in the analysis environment."
+        "scipy.stats (mannwhitneyu/ttest_ind) is required. Install scipy in the active environment."
     ) from exc
 
 
