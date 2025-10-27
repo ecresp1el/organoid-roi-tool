@@ -38,6 +38,7 @@ the shared logic that lives in this folder.
 | `scripts/make_seg_from_model.py` | Runs a Cellpose model on one or more folders, generating the standard `*_seg.npy` files. |
 | `train_organoid_model.sh` | End-to-end pipeline: link training data, generate labels (if missing), train a custom model, and archive the results. |
 | `analyse_whole_organoid.py` | Summarise manually curated `_seg.npy` masks (WT vs KO tables/plots) using the multi-channel TIFF stacks. |
+| `copy_max_masks.py` | Duplicate masks from the max projection into mean/median folders. |
 
 ---
 
@@ -104,6 +105,20 @@ project, plus per-group masked-intensity panels (WT and KO) so you can visually
 inspect the pixels each mask captures. Combined WT vs KO panels use the WT
 intensity distribution (1st–99th percentile) to set the shared color scale,
 making between-group changes obvious.
+
+Need to reuse the same ROI across `mean`/`median` projections? Copy the masks
+from `max` once:
+
+```bash
+python cellpose_organoid/copy_max_masks.py \
+  --base-path /Volumes/.../your_project \
+  --analysis NestinvsDcx_WTvsKO_IHC
+```
+
+This duplicates `*_seg.npy` (and optionally `*_cp_masks.png` with
+`--include-png`) into the sibling `mean/` and `median/` folders, so
+`analyse_whole_organoid.py` can crunch all projection types without redrawing
+ROIs.
 
 ## Running Just the Helpers
 

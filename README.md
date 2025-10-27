@@ -514,6 +514,19 @@ After the projection exporter runs, follow the dedicated guide in
    files alongside each TIFF, and the training script automatically detects these
    existing masks so it does not overwrite them.
 
+If you want to reuse the same ROI for `mean`/`median` projections, copy the
+`max` masks once:
+
+```
+python cellpose_organoid/copy_max_masks.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC
+```
+
+After the helpers populate the sibling directories, you can run
+`analyse_whole_organoid.py` with `--projection mean` / `median` without redrawing
+ROIs.
+
 ### Analyse manual masks
 
 Once the GUI has saved `_seg.npy` files you can reproduce the WT vs KO tables,
