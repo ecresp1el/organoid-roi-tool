@@ -595,6 +595,8 @@ def generate_combined_panel(
 
     axes[0][0].set_ylabel("WT", fontsize=12)
     axes[1][0].set_ylabel("KO", fontsize=12)
+    fig.text(0.01, 0.75, "WT", fontsize=12, va="center", ha="left")
+    fig.text(0.01, 0.25, "KO", fontsize=12, va="center", ha="left")
 
     fig.suptitle(f"{channel_slug} – {projection_type.upper()} – WT vs KO (WT-normalised)", fontsize=14)
     with warnings.catch_warnings():

@@ -530,6 +530,9 @@ python cellpose_organoid/analyse_whole_organoid.py \
 Outputs land in
 `<base>/analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/`
 mirroring the original projection analyses.
+Masked-intensity panels (per-group and combined WT vs KO) use the WT masks to
+set the color scale (1st–99th percentile), so every KO panel is directly
+comparable to the WT baseline.
 
 To re-run segmentation on new folders, call
 `python cellpose_organoid/scripts/make_seg_from_model.py --dirs <folders> --model <model_path>`

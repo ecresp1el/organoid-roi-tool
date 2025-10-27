@@ -101,7 +101,9 @@ Outputs are stored in
 `<base>/analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/`
 with the same per-channel CSVs and summary figures used elsewhere in the
 project, plus per-group masked-intensity panels (WT and KO) so you can visually
-inspect the pixels each mask captures.
+inspect the pixels each mask captures. Combined WT vs KO panels use the WT
+intensity distribution (1st–99th percentile) to set the shared color scale,
+making between-group changes obvious.
 
 ---
 
