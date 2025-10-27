@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import types
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 
@@ -27,9 +28,22 @@ os.environ.setdefault("NAPARI_NO_TENSORSTORE", "1")
 try:  # napari / dask expect the backport even on Python >= 3.11
     import importlib_metadata  # type: ignore
 except Exception:  # pragma: no cover
-    import importlib.metadata as importlib_metadata  # type: ignore[attr-defined]
+    import importlib.metadata as _stdlib_metadata  # type: ignore[attr-defined]
     import sys
 
+    class _CompatImportLib(types.ModuleType):
+        def __getattr__(self, name):
+            return getattr(_stdlib_metadata, name)
+
+        def entry_points(self, group: Optional[str] = None):
+            eps = _stdlib_metadata.entry_points()
+            if hasattr(eps, "select"):
+                return eps.select(group=group) if group else eps
+            if group is None:
+                return eps
+            return [ep for ep in eps if getattr(ep, "group", None) == group]
+
+    importlib_metadata = _CompatImportLib("importlib_metadata")  # type: ignore
     sys.modules.setdefault("importlib_metadata", importlib_metadata)
 
 try:
