@@ -15,5 +15,6 @@ dependencies:
   - pip:
       - napari>=0.4.19
       - PySide6>=6.6
+      - scipy>=1.11
       - scikit-image>=0.22
       - pyinstaller>=6.5
