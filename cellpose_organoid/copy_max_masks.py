@@ -80,24 +80,47 @@ def main() -> None:
             for suffix in suffixes:
                 if suffix == "_seg.npy":
                     src_file = src
-                    dest_name = f"{stem}{suffix}"
+                    dest_name = src_file.name.replace("__max__", f"__{projection}__")
+                    dest = dest_dir / dest_name
+                    wrong_name = dest_dir / f"{stem}{suffix}"
+                    if wrong_name.exists() and not dest.exists():
+                        print(f"[FIX] Renaming legacy file {wrong_name.name} -> {dest.name}")
+                        wrong_name.rename(dest)
+                    legacy_name = dest_dir / src_file.name
+                    if legacy_name.exists() and not dest.exists():
+                        print(f"[FIX] Renaming legacy file {legacy_name.name} -> {dest.name}")
+                        legacy_name.rename(dest)
+                    if dest.exists():
+                        print(f"[SKIP] {dest} already exists")
+                        skipped += 1
+                        continue
+                    if args.dry_run:
+                        print(f"[DRY] Copy {src_file} -> {dest}")
+                    else:
+                        shutil.copy2(src_file, dest)
+                        print(f"[OK] Copied {dest}")
+                        copied += 1
                 else:
                     png_candidate = src.with_name(src.stem.replace("_seg", "") + suffix)
                     if not png_candidate.exists():
                         continue
                     src_file = png_candidate
-                    dest_name = png_candidate.name
-                dest = dest_dir / dest_name
-                if dest.exists():
-                    print(f"[SKIP] {dest} already exists")
-                    skipped += 1
-                    continue
-                if args.dry_run:
-                    print(f"[DRY] Copy {src_file} -> {dest}")
-                else:
-                    shutil.copy2(src_file, dest)
-                    print(f"[OK] Copied {dest}")
-                copied += 1
+                    dest_name = src_file.name.replace("__max__", f"__{projection}__")
+                    dest = dest_dir / dest_name
+                    legacy_name = dest_dir / src_file.name
+                    if legacy_name.exists() and not dest.exists():
+                        print(f"[FIX] Renaming legacy file {legacy_name.name} -> {dest.name}")
+                        legacy_name.rename(dest)
+                    if dest.exists():
+                        print(f"[SKIP] {dest} already exists")
+                        skipped += 1
+                        continue
+                    if args.dry_run:
+                        print(f"[DRY] Copy {src_file} -> {dest}")
+                    else:
+                        shutil.copy2(src_file, dest)
+                        print(f"[OK] Copied {dest}")
+                        copied += 1
 
     print(f"[DONE] Masks processed. Files copied: {copied}, skipped: {skipped}")
 
