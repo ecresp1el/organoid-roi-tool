@@ -573,6 +573,12 @@ Outputs land in
 so re-runs never overwrite previous CSVs or figures. Each channel also exposes a
 `latest` symlink pointing to the most recent run.
 
+Statistics explained: the analyser first averages pixel intensities *per organoid*
+(inside each mask), then aggregates those per-organoid means within each group.
+The CSV therefore reports the mean/median/SEM/CI for WT/KO organoids. Welch's
+t-test and the Mann–Whitney U test are run once per projection to compare the
+WT and KO distributions.
+
 Examples for the Nestin/DCX project:
 
 ```

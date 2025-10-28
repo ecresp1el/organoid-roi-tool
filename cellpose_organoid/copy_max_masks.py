@@ -80,6 +80,7 @@ def main() -> None:
     for src in seg_files:
         stem = src.stem
         for projection in TARGET_PROJECTIONS:
+            # Mirror the max mask into each target projection directory.
             dest_dir = src.parents[2] / projection / src.parent.name
             dest_dir.mkdir(parents=True, exist_ok=True)
             for suffix in suffixes:

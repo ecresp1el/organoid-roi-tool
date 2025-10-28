@@ -132,6 +132,7 @@ project, plus per-group masked-intensity panels (WT and KO) so you can visually
 inspect the pixels each mask captures. Combined WT vs KO panels use the WT
 intensity distribution (1st–99th percentile) to set the shared color scale,
 making between-group changes obvious.
+Statistics explained: for each organoid the script averages pixel intensity inside the mask, then aggregates those per-organoid means in WT and KO groups. The output CSV reports group mean/median/SEM/CI. Welch's t-test and the Mann–Whitney U test compare WT vs KO for each projection (max/mean/median).
 
 Each run is written to `analysis_pipeline/<channel>/runs/<run-tag>/...`. If you
 omit `--run-tag` a timestamp is used so repeated analyses do not overwrite prior

@@ -268,6 +268,13 @@ def lookup_channel_metadata(
 
 
 def compute_statistics(pixels: np.ndarray, mask_pixels: float) -> dict:
+    """Return per-image summary statistics inside a single mask.
+
+    * `pixel_mean` / `pixel_median` give central tendency.
+    * `pixel_std` lets us derive SEM and the 95% confidence interval.
+    * `pixel_max` is provided for quick sanity checks (e.g. saturation).
+    """
+
     pixel_mean = float(np.mean(pixels))
     pixel_median = float(np.median(pixels))
     pixel_std = float(np.std(pixels, ddof=1)) if pixels.size > 1 else 0.0
@@ -330,6 +337,13 @@ def save_channel_outputs(channel_slug: str, df: pd.DataFrame, pipeline_root: Pat
 
 
 def summarise_groups(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse per-image measurements into group-level summaries.
+
+    For each projection (max/mean/median) we compute the mean of the per-image
+    means, its standard deviation, SEM and 95% confidence interval. That means
+    the CSV represents the distribution of organoid intensities, not raw pixels.
+    """
+
     summaries: List[dict] = []
     for (projection_type), projection_df in df.groupby("projection_type"):
         for group, group_df in projection_df.groupby("group"):
@@ -361,6 +375,8 @@ def summarise_groups(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compare_groups(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Perform Welch t-test and Mann-Whitney U test for each projection."""
+
     comparisons: List[dict] = []
     for projection_type, projection_df in df.groupby("projection_type"):
         wt = projection_df.loc[projection_df["group"] == "WT", "pixel_mean"].astype(float).to_numpy()
@@ -389,6 +405,12 @@ def compare_groups(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 
 
 def plot_projection_summary(projection_df: pd.DataFrame, channel_slug: str, projection_type: str):
+    """Return a two-panel figure showing WT vs KO pixel means.
+
+    Left: boxplot with per-organoid points. Right: bar chart of WT/KO mean ± SEM.
+    Both panels share the same data so the plot mirrors the summary CSV.
+    """
+
     groups = ["WT", "KO"]
     values = [
         projection_df.loc[projection_df["group"] == group, "pixel_mean"].astype(float).to_numpy()
