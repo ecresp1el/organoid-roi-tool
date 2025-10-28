@@ -527,6 +527,20 @@ After the helper populates the sibling directories, you can run
 `analyse_whole_organoid.py` with `--projection mean` / `median` without redrawing
 ROIs.
 
+Examples
+
+```
+# Project: PCDHvsLHX6_WTvsKO_IHC (10_16_2025)
+python cellpose_organoid/copy_max_masks.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC --include-png
+
+# Project: NestinvsDcx_WTvsKO_IHC (10_13_2025)
+python cellpose_organoid/copy_max_masks.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC --include-png
+```
+
 ### Analyse manual masks
 
 Once the GUI has saved `_seg.npy` files you can reproduce the WT vs KO tables,
@@ -537,12 +551,72 @@ conda activate organoid_roi_incucyte_imaging
 python cellpose_organoid/analyse_whole_organoid.py \
   --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
   --analysis PCDHvsLHX6_WTvsKO_IHC \
-  --projection max
+  --projection max \
+  --run-tag LHX6_max_run1
+
+# Repeat for additional projections if needed
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC \
+  --projection mean \
+  --run-tag LHX6_mean_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC \
+  --projection median \
+  --run-tag LHX6_median_run1
 ```
 
 Outputs land in
-`<base>/analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/`
-mirroring the original projection analyses.
+`<base>/analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/<channel>/runs/<run-tag>/`
+so re-runs never overwrite previous CSVs or figures. Each channel also exposes a
+`latest` symlink pointing to the most recent run.
+
+Examples for the Nestin/DCX project:
+
+```
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection max \
+  --run-tag Nestin_max_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection mean \
+  --run-tag Nestin_mean_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection median \
+  --run-tag Nestin_median_run1
+```
+
+Example commands for the Nestin/DCX project:
+
+```
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection max \
+  --run-tag Nestin_max_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection mean \
+  --run-tag Nestin_mean_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection median \
+  --run-tag Nestin_median_run1
+```
+
 Masked-intensity panels (per-group and combined WT vs KO) use the WT masks to
 set the color scale (1st–99th percentile), so every KO panel is directly
 comparable to the WT baseline.

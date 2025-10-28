@@ -81,6 +81,12 @@ def parse_args() -> argparse.Namespace:
         help="Override the default output directory "
         "(defaults to <base>/analysis_results/<analysis>/whole_organoid_analysis).",
     )
+    parser.add_argument(
+        "--run-tag",
+        default=None,
+        help="Optional label used to store outputs under analysis_pipeline/<channel>/runs/<tag>. "
+        "Defaults to a timestamp so re-running does not overwrite prior CSVs/figures.",
+    )
     return parser.parse_args()
 
 
@@ -126,8 +132,12 @@ def main() -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "whole_organoid_results.csv").write_text(results.to_csv(index=False))
 
+    # Each execution writes results into a unique folder so previous runs are preserved.
+    run_tag = args.run_tag or Path(f"run_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}").name
+    print(f"[INFO] Saving pipeline outputs under run tag: {run_tag}")
+
     for channel_slug, channel_df in results.groupby("channel_slug"):
-        save_channel_outputs(channel_slug, channel_df, data_dir)
+        save_channel_outputs(channel_slug, channel_df, data_dir, run_tag)
 
     print(f"[DONE] Whole-organoid analysis complete. Outputs in {output_root}")
 
@@ -282,12 +292,20 @@ def confidence_interval(mean: float, std: float, count: float) -> tuple[float, f
     return (mean - margin, mean + margin)
 
 
-def save_channel_outputs(channel_slug: str, df: pd.DataFrame, pipeline_root: Path) -> None:
+def save_channel_outputs(channel_slug: str, df: pd.DataFrame, pipeline_root: Path, run_tag: str) -> None:
     channel_dir = pipeline_root / channel_slug
-    data_dir = channel_dir / "data"
-    figures_dir = channel_dir / "figures"
+    run_root = channel_dir / "runs" / run_tag
+    data_dir = run_root / "data"
+    figures_dir = run_root / "figures"
     data_dir.mkdir(parents=True, exist_ok=True)
     figures_dir.mkdir(parents=True, exist_ok=True)
+    latest_symlink = channel_dir / 'latest'
+    if latest_symlink.exists() or latest_symlink.is_symlink():
+        latest_symlink.unlink()
+    try:
+        latest_symlink.symlink_to(run_root.relative_to(channel_dir))
+    except Exception:
+        latest_symlink.symlink_to(run_root)
 
     df.to_csv(data_dir / "per_image_results.csv", index=False)
 

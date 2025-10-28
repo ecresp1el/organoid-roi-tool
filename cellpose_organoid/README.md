@@ -42,6 +42,32 @@ the shared logic that lives in this folder.
 
 ---
 
+## Whole-organoid quick recipe
+
+1. **Finish the projection export** with
+   `simple_projection_tool/prepare_for_cellprofiler_cellpose.py`.
+2. **Annotate masks** once in the `max` projection (Cellpose GUI).
+3. **Reuse the masks** for `mean`/`median`:
+   ```
+   python cellpose_organoid/copy_max_masks.py \
+     --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+     --analysis PCDHvsLHX6_WTvsKO_IHC --include-png
+   ```
+4. **Run the analysis** (repeat for max/mean/median as needed, using a new
+   `--run-tag` each time):
+   ```
+   python cellpose_organoid/analyse_whole_organoid.py \
+     --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+     --analysis PCDHvsLHX6_WTvsKO_IHC \
+     --projection max \
+     --run-tag LHX6_max_run1
+   ```
+
+Output folders live under
+`analysis_results/<analysis>/whole_organoid_analysis/analysis_pipeline/<channel>/runs/<run-tag>/`.
+
+---
+
 ## Typical Training Workflow
 
 1. **Edit `train_organoid_model.sh`**  
@@ -95,7 +121,8 @@ conda activate organoid_roi_incucyte_imaging
 python cellpose_organoid/analyse_whole_organoid.py \
   --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
   --analysis PCDHvsLHX6_WTvsKO_IHC \
-  --projection max
+  --projection max \
+  --run-tag PCDH19_max_v1
 ```
 
 Outputs are stored in
@@ -105,6 +132,11 @@ project, plus per-group masked-intensity panels (WT and KO) so you can visually
 inspect the pixels each mask captures. Combined WT vs KO panels use the WT
 intensity distribution (1st–99th percentile) to set the shared color scale,
 making between-group changes obvious.
+
+Each run is written to `analysis_pipeline/<channel>/runs/<run-tag>/...`. If you
+omit `--run-tag` a timestamp is used so repeated analyses do not overwrite prior
+CSVs/figures. The symlink `analysis_pipeline/<channel>/latest` always points to
+the most recent run for convenience.
 
 If you want to reuse the same ROI for the `mean` or `median` projections, run
 the helper after saving masks in the `max` folder:
@@ -119,6 +151,62 @@ python cellpose_organoid/copy_max_masks.py \
 This duplicates each `_seg.npy` (and optional `_cp_masks.png`) into the sibling
 projection directories with the correct naming convention, so
 `analyse_whole_organoid.py` can process all projection types using the same ROI.
+
+Examples:
+
+```
+# PCDHvsLHX6_WTvsKO_IHC (10_16_2025)
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC \
+  --projection max \
+  --run-tag LHX6_max_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC \
+  --projection mean \
+  --run-tag LHX6_mean_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC \
+  --projection median \
+  --run-tag LHX6_median_run1
+
+# NestinvsDcx_WTvsKO_IHC (10_13_2025)
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection max \
+  --run-tag Nestin_max_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection mean \
+  --run-tag Nestin_mean_run1
+
+python cellpose_organoid/analyse_whole_organoid.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC \
+  --projection median \
+  --run-tag Nestin_median_run1
+```
+
+Example commands:
+
+```
+# Project: PCDHvsLHX6_WTvsKO_IHC (10_16_2025)
+python cellpose_organoid/copy_max_masks.py \
+  --base-path /Volumes/Manny4TBUM/10_16_2025/lhx6_pdch19_WTvsKO_projectfolder \
+  --analysis PCDHvsLHX6_WTvsKO_IHC --include-png
+
+# Project: NestinvsDcx_WTvsKO_IHC (10_13_2025)
+python cellpose_organoid/copy_max_masks.py \
+  --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt \
+  --analysis NestinvsDcx_WTvsKO_IHC --include-png
+```
 
 Need to reuse the same ROI across `mean`/`median` projections? Copy the masks
 from `max` once:

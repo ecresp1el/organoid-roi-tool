@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Copy max-projection Cellpose masks into mean/median folders."""
+"""Copy max-projection Cellpose masks into the mean/median folders.
+
+The whole-organoid workflow draws masks on the ``max`` projection. This helper
+reuses those masks for the ``mean`` and ``median`` projections so you can run
+statistics without redrawing anything.
+"""
 
 from __future__ import annotations
 
@@ -128,6 +133,12 @@ def main() -> None:
 
 
 def iter_seg_files(max_root: Path, groups: Iterable[str]) -> Iterable[Path]:
+    """Yield each ``*_seg.npy`` file inside ``max/<group>/``.
+
+    Printing missing group directories helps non-programmers understand why
+    nothing was copied when a typo sneaks into ``--groups``.
+    """
+
     for group in groups:
         group_dir = max_root / group
         if not group_dir.exists():
