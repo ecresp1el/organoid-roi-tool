@@ -27,6 +27,7 @@ import pandas as pd
 import tifffile as tiff  # type: ignore
 
 from .base import ProjectionAnalysis
+from .mask_utils import load_mask_array
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,7 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
         )
         self.channel_filter_names = requested
         self._configure_pipeline_dirs()
+        self._mask_cache: Dict[Path, Optional[np.ndarray]] = {}
 
     def run(self) -> None:
         unique_channels: list[str] = []
@@ -275,7 +277,9 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
         for row in manifest.itertuples():
             path = Path(row.path)
             data = self._load_projection(path)
-            stats = self._compute_statistics(data)
+            run_folder = self._run_folder_from_projection(path)
+            mask = self._load_mask_for_run(run_folder)
+            stats = self._compute_statistics(data, mask=mask)
             results.append(
                 {
                     "group": row.group,
@@ -416,8 +420,37 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
             array = np.squeeze(array)
         return array.astype(np.float64, copy=False)
 
-    def _compute_statistics(self, array: np.ndarray) -> Dict[str, float]:
-        flattened = array.ravel()
+    def _run_folder_from_projection(self, projection_path: Path) -> Path:
+        """Return the projection run folder (parent of ``16bit``)."""
+
+        return projection_path.parent.parent
+
+    def _load_mask_for_run(self, run_folder: Path) -> Optional[np.ndarray]:
+        """Load (and cache) the binary mask array for ``run_folder``."""
+
+        run_folder = run_folder.resolve()
+        if run_folder in self._mask_cache:
+            return self._mask_cache[run_folder]
+        mask = load_mask_array(run_folder)
+        self._mask_cache[run_folder] = mask
+        return mask
+
+    def _compute_statistics(
+        self,
+        array: np.ndarray,
+        *,
+        mask: Optional[np.ndarray] = None,
+    ) -> Dict[str, float]:
+        """Return descriptive statistics for ``array`` (optionally masked)."""
+
+        if mask is not None:
+            if mask.shape != array.shape:
+                raise ValueError(
+                    f"Mask shape {mask.shape} does not match projection {array.shape}."
+                )
+            flattened = array[mask]
+        else:
+            flattened = array.ravel()
         pixel_count = float(flattened.size)
         pixel_mean = float(np.mean(flattened))
         pixel_median = float(np.median(flattened))

@@ -99,6 +99,9 @@ This analysis mirrors the structure above but targets the Nestin/DCX cohort.
   numbers.
 - Channels that are not present in the dataset are skipped with a console
   message so you can confirm which markers were processed.
+- An optional `mask*.tif(f)` placed in each run folder’s `16bit/` directory
+  limits every statistic/plot to just the masked pixels (ideal for organoid-only
+  comparisons). Multiple masks per folder raise an error so you can clean up.
 
 ### `NestinvsDcx_MaleVsFemale_IHC`
 
@@ -120,6 +123,8 @@ python simple_projection_tool/run_projection_analysis.py \
 - Figures depict Female vs Male box/SEM plots using orange/blue colour coding.
 - Samples missing an `F` or `M` token in their folder name are skipped so the
   comparison only includes labelled runs.
+- The optional mask behaviour matches the WT vs KO analysis; one `mask*.tif(f)`
+  per run restricts the calculations to the labelled organoid region.
 
 ### `NestinvsDcx_WTvsKO_BySex_IHC`
 
@@ -142,6 +147,18 @@ python simple_projection_tool/run_projection_analysis.py \
   Welch t-tests, Mann-Whitney tests, per-image summary panels).
 - If a sex token is missing in the folder name, that run is skipped and noted
   in the console log.
+- Masks are honoured during each sex-specific run, so keep a single
+  `mask*.tif(f)` per folder if you want to confine the analysis to the organoid.
+
+---
+
+### Optional organoid masks
+
+All Nestin/DCX and PCDH19/LHX6 analyses look for a single binary mask inside
+each run folder’s `16bit/` directory (any file matching `mask*.tif` or
+`mask*.tiff`). When present, the mask limits every measurement and figure to the
+masked pixels. Missing masks are ignored, while multiple masks trigger a clear
+error so you can keep only one per run before rerunning the pipeline.
 
 ### Pixel handling cheat-sheet for imaging scientists
 
