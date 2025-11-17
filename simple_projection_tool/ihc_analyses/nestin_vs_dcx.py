@@ -58,6 +58,13 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
 
     CONFIDENCE_Z = 1.96
 
+    GROUP_LABEL = "WT vs KO"
+    GROUP_NAMES = ("WT", "KO")
+    GROUP_COLORS = {
+        "WT": "#1f77b4",
+        "KO": "#d62728",
+    }
+
     CHANNEL_ALIASES = {
         "nestin": (
             "Nestin",
@@ -305,18 +312,18 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
         else:
             summary_channels = ", ".join(sorted(summary["channel_canonical"].unique()))
             print(
-                f"[{self.name}]     compiled WT vs KO summaries per projection type for channel(s): {summary_channels}.",
+                f"[{self.name}]     compiled {self.GROUP_LABEL} summaries per projection type for channel(s): {summary_channels}.",
                 flush=True,
             )
         if comparisons.empty:
             print(
-                f"[{self.name}]     no group comparisons were produced (missing WT/KO pairs).",
+                f"[{self.name}]     no group comparisons were produced (missing {self.GROUP_LABEL} pairs).",
                 flush=True,
             )
         else:
             comparison_channels = ", ".join(sorted(comparisons["channel_canonical"].unique()))
             print(
-                f"[{self.name}]     calculated WT vs KO statistical tests per projection type for channel(s): {comparison_channels}.",
+                f"[{self.name}]     calculated {self.GROUP_LABEL} statistical tests per projection type for channel(s): {comparison_channels}.",
                 flush=True,
             )
 
@@ -340,13 +347,13 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
             figure = self._plot_projection_summary(channel, projection_type, projection_df)
             if figure is None:
                 print(
-                    f"[{self.name}]     skipped plotting for {channel!r} / {projection_type!r} (missing WT/KO data)",
+                    f"[{self.name}]     skipped plotting for {channel!r} / {projection_type!r} (missing {self.GROUP_LABEL} data)",
                     flush=True,
                 )
                 continue
 
             description = (
-                "Pixel mean distribution (box plus mean and SEM) for WT versus KO projections "
+                f"Pixel mean distribution (box plus mean and SEM) for {self.GROUP_LABEL} projections "
                 f"[{projection_df['channel_marker'].iloc[0]} – {projection_df['channel_canonical'].iloc[0]}]"
             )
             metadata = {
@@ -488,42 +495,56 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
             ) from exc
 
         comparisons: List[Dict[str, float | str | int]] = []
+        group_names = tuple(self.GROUP_NAMES)
+        if len(group_names) != 2:
+            raise ValueError("GROUP_NAMES must contain exactly two entries for comparisons.")
+        group_a, group_b = group_names
+
         for (channel, projection_type), projection_df in results.groupby(
             ["channel", "projection_type"]
         ):
             meta_row = projection_df.iloc[0]
-            wt_values = (
-                projection_df.loc[projection_df["group"] == "WT", "pixel_mean"]
-                .astype(float)
-                .to_numpy()
-            )
-            ko_values = (
-                projection_df.loc[projection_df["group"] == "KO", "pixel_mean"]
-                .astype(float)
-                .to_numpy()
-            )
-            wt_files = (
-                projection_df.loc[projection_df["group"] == "WT", "filename"]
-                .astype(str)
-                .sort_values()
-                .unique()
-                .tolist()
-            )
-            ko_files = (
-                projection_df.loc[projection_df["group"] == "KO", "filename"]
-                .astype(str)
-                .sort_values()
-                .unique()
-                .tolist()
-            )
+            group_values = {
+                group_a: (
+                    projection_df.loc[projection_df["group"] == group_a, "pixel_mean"]
+                    .astype(float)
+                    .to_numpy()
+                ),
+                group_b: (
+                    projection_df.loc[projection_df["group"] == group_b, "pixel_mean"]
+                    .astype(float)
+                    .to_numpy()
+                ),
+            }
+            group_files = {
+                group_a: (
+                    projection_df.loc[projection_df["group"] == group_a, "filename"]
+                    .astype(str)
+                    .sort_values()
+                    .unique()
+                    .tolist()
+                ),
+                group_b: (
+                    projection_df.loc[projection_df["group"] == group_b, "filename"]
+                    .astype(str)
+                    .sort_values()
+                    .unique()
+                    .tolist()
+                ),
+            }
 
-            if wt_values.size == 0 or ko_values.size == 0:
+            if group_values[group_a].size == 0 or group_values[group_b].size == 0:
                 continue
 
-            ttest = stats.ttest_ind(wt_values, ko_values, equal_var=False, nan_policy="omit")
+            ttest = stats.ttest_ind(
+                group_values[group_a],
+                group_values[group_b],
+                equal_var=False,
+                nan_policy="omit",
+            )
             mannwhitney = stats.mannwhitneyu(
-                wt_values,
-                ko_values,
+                group_values[group_a],
+                group_values[group_b],
                 alternative="two-sided",
             )
 
@@ -532,38 +553,40 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
                     return 0.0
                 return float(np.std(values, ddof=1) / np.sqrt(values.size))
 
-            comparisons.append(
-                {
-                    "analysis": self.name,
-                    "projection_type": projection_type,
-                    "channel": channel,
-                    "channel_canonical": meta_row.get("channel_canonical", channel),
-                    "channel_marker": meta_row.get("channel_marker", channel),
-                    "channel_wavelength_nm": meta_row.get("channel_wavelength_nm"),
-                    "metric": "pixel_mean",
-                    "parametric_test": "Welch t-test",
-                    "parametric_statistic": float(ttest.statistic),
-                    "parametric_pvalue": float(ttest.pvalue),
-                    "nonparametric_test": "Mann-Whitney U",
-                    "nonparametric_statistic": float(mannwhitney.statistic),
-                    "nonparametric_pvalue": float(mannwhitney.pvalue),
-                    "wt_n": int(wt_values.size),
-                    "ko_n": int(ko_values.size),
-                    "wt_mean": float(np.mean(wt_values)),
-                    "ko_mean": float(np.mean(ko_values)),
-                    "wt_median": float(np.median(wt_values)),
-                    "ko_median": float(np.median(ko_values)),
-                    "wt_sem": _sem(wt_values),
-                    "ko_sem": _sem(ko_values),
-                    "wt_filenames": ";".join(wt_files),
-                    "ko_filenames": ";".join(ko_files),
-                    "subject_labels": ";".join(
-                        sorted(
-                            {label for label in projection_df["subject_label"].dropna().astype(str)}
-                        )
-                    ),
-                }
+            comparison_entry: Dict[str, float | str | int] = {
+                "analysis": self.name,
+                "projection_type": projection_type,
+                "channel": channel,
+                "channel_canonical": meta_row.get("channel_canonical", channel),
+                "channel_marker": meta_row.get("channel_marker", channel),
+                "channel_wavelength_nm": meta_row.get("channel_wavelength_nm"),
+                "metric": "pixel_mean",
+                "parametric_test": "Welch t-test",
+                "parametric_statistic": float(ttest.statistic),
+                "parametric_pvalue": float(ttest.pvalue),
+                "nonparametric_test": "Mann-Whitney U",
+                "nonparametric_statistic": float(mannwhitney.statistic),
+                "nonparametric_pvalue": float(mannwhitney.pvalue),
+                "group_a": group_a,
+                "group_b": group_b,
+            }
+
+            for label in (group_a, group_b):
+                values = group_values[label]
+                files = group_files[label]
+                slug = self._slugify(label)
+                comparison_entry[f"{slug}_n"] = int(values.size)
+                comparison_entry[f"{slug}_mean"] = float(np.mean(values))
+                comparison_entry[f"{slug}_median"] = float(np.median(values))
+                comparison_entry[f"{slug}_sem"] = _sem(values)
+                comparison_entry[f"{slug}_filenames"] = ";".join(files)
+
+            comparison_entry["subject_labels"] = ";".join(
+                sorted(
+                    {label for label in projection_df["subject_label"].dropna().astype(str)}
+                )
             )
+            comparisons.append(comparison_entry)
 
         return pd.DataFrame(comparisons)
 
@@ -573,8 +596,8 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
         projection_type: str,
         projection_df: pd.DataFrame,
     ) -> Optional[plt.Figure]:
-        groups = ["WT", "KO"]
-        colors = {"WT": "#1f77b4", "KO": "#d62728"}
+        groups = list(self.GROUP_NAMES)
+        colors = {group: self.GROUP_COLORS.get(group, "#6c757d") for group in groups}
         values = [
             projection_df.loc[projection_df["group"] == group, "pixel_mean"]
             .astype(float)
@@ -639,11 +662,11 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
         axes[1].set_title("Mean +/- SEM (pixel mean)")
         axes[1].grid(axis="y", alpha=0.3)
 
-        fig.suptitle(
-            f"{projection_df['channel_marker'].iloc[0]} – WT vs KO pixel mean comparison "
-            f"({projection_type.upper()} projection)",
-            fontsize=14,
+        fig_suptitle = (
+            f"{projection_df['channel_marker'].iloc[0]} – {self.GROUP_LABEL} pixel mean comparison "
+            f"({projection_type.upper()} projection)"
         )
+        fig.suptitle(fig_suptitle, fontsize=14)
         fig.tight_layout()
 
         return fig

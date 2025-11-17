@@ -100,6 +100,27 @@ This analysis mirrors the structure above but targets the Nestin/DCX cohort.
 - Channels that are not present in the dataset are skipped with a console
   message so you can confirm which markers were processed.
 
+### `NestinvsDcx_MaleVsFemale_IHC`
+
+*Location:* [`nestin_vs_dcx_male_female.py`](./nestin_vs_dcx_male_female.py)
+
+This analysis mirrors the Nestin/DCX WT vs KO pipeline but groups samples by
+the inferred `F`/`M` token embedded in the folder names. Run it when you want
+to split the dataset by sex:
+
+```bash
+python simple_projection_tool/run_projection_analysis.py \
+    NestinvsDcx_MaleVsFemale_IHC \
+    --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt
+```
+
+- Outputs live under `analysis_results/NestinvsDcx_MaleVsFemale_IHC/`.
+- The tables include the same per-image statistics as the WT vs KO run, but the
+  `group` column now reads `Female` or `Male`.
+- Figures depict Female vs Male box/SEM plots using orange/blue colour coding.
+- Samples missing an `F` or `M` token in their folder name are skipped so the
+  comparison only includes labelled runs.
+
 ### Pixel handling cheat-sheet for imaging scientists
 
 - Each projection TIFF is read exactly as exported (unsigned 16-bit). The
