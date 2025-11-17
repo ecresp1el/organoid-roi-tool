@@ -29,13 +29,13 @@ class NestinvsDcx_WTvsKOBySexIHCAnalysis(NestinvsDcx_WTvsKOIHCAnalysis):
         output_dir: Optional[Path | str] = None,
         channel_filter: Optional[Sequence[str]] = None,
     ) -> None:
+        self._current_subject_label_filter: Optional[str] = None
         super().__init__(
             base_path,
             projection_dir_name=projection_dir_name,
             output_dir=output_dir,
             channel_filter=channel_filter,
         )
-        self._current_subject_label_filter: Optional[str] = None
 
     def run(self) -> None:
         aggregated_tables: List[Path] = []
