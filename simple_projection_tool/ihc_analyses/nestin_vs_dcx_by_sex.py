@@ -1,4 +1,13 @@
-"""WT vs KO analysis stratified by sex for the Nestin/DCX dataset."""
+"""WT vs KO analysis stratified by sex for the Nestin/DCX dataset.
+
+The original Nestin/DCX pipeline compares WT vs KO across all samples. This
+version keeps that exact logic but automatically reruns the analysis twice: once
+for only Female-labelled folders and once for Male-labelled folders. Each pass
+inherits the full WT/KO workflow (manifest creation, per-image stats, group
+summaries, figures, and tables) so scientists can answer “Does genotype differ
+within each sex?” without launching multiple commands or copy/pasting output
+folders.
+"""
 
 from __future__ import annotations
 
@@ -38,6 +47,8 @@ class NestinvsDcx_WTvsKOBySexIHCAnalysis(NestinvsDcx_WTvsKOIHCAnalysis):
         )
 
     def run(self) -> None:
+        """Sequentially run the parent WT/KO analysis for each sex label."""
+
         aggregated_tables: List[Path] = []
         aggregated_figures: List[Path] = []
         aggregated_per_images: List[Path] = []
@@ -71,6 +82,8 @@ class NestinvsDcx_WTvsKOBySexIHCAnalysis(NestinvsDcx_WTvsKOIHCAnalysis):
         self.per_image_summary_paths = aggregated_per_images
 
     def import_data(self) -> pd.DataFrame:
+        """Filter the manifest to the current sex before processing."""
+
         manifest = super().import_data()
         label = self._current_subject_label_filter
         if label is None:
@@ -84,6 +97,8 @@ class NestinvsDcx_WTvsKOBySexIHCAnalysis(NestinvsDcx_WTvsKOIHCAnalysis):
         return filtered
 
     def _derive_channel_context_slug(self) -> str:
+        """Add the current sex to the channel context slug for output paths."""
+
         slug = super()._derive_channel_context_slug()
         if self._current_subject_label_filter:
             sex_name = self.SEX_NAMES.get(self._current_subject_label_filter, "unknown")
