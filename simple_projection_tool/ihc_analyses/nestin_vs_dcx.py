@@ -371,12 +371,24 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
             plt.close(figure)
 
     def _infer_group(self, folder_name: str) -> Optional[str]:
+        """Map run folder names to WT/KO based on stable naming tokens.
+
+        Current convention:
+            - Tokens starting with IGIKO or 2EKO => KO
+            - Tokens starting with IGI or 2E (without KO) => WT
+        """
+
+        import re
+
         lowered = folder_name.lower()
-        if "igiko" in lowered:
+        tokens = [token for token in re.split(r"[^a-z0-9]+", lowered) if token]
+
+        def _token_startswith(prefixes: tuple[str, ...]) -> bool:
+            return any(token.startswith(prefix) for token in tokens)
+
+        if _token_startswith(("igiko", "2eko")):
             return "KO"
-        if lowered == "igi" or lowered.startswith("igi_") or lowered.startswith("igi-"):
-            return "WT"
-        if "igi" in lowered and "igiko" not in lowered:
+        if _token_startswith(("igi", "2e")):
             return "WT"
         return None
 
