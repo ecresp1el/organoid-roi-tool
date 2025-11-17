@@ -384,7 +384,11 @@ class NestinvsDcx_WTvsKOIHCAnalysis(ProjectionAnalysis):
         tokens = [token for token in re.split(r"[^a-z0-9]+", lowered) if token]
 
         def _token_startswith(prefixes: tuple[str, ...]) -> bool:
-            return any(token.startswith(prefix) for token in tokens)
+            for token in tokens:
+                for prefix in prefixes:
+                    if token.startswith(prefix):
+                        return True
+            return False
 
         if _token_startswith(("igiko", "2eko")):
             return "KO"
