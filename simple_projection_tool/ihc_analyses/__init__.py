@@ -10,11 +10,13 @@ from .base import ProjectionAnalysis
 from .pcdh_vs_lhx6 import PCDHvsLHX6_WTvsKOIHCAnalysis
 from .nestin_vs_dcx import NestinvsDcx_WTvsKOIHCAnalysis
 from .nestin_vs_dcx_male_female import NestinvsDcx_MaleVsFemaleIHCAnalysis
+from .nestin_vs_dcx_by_sex import NestinvsDcx_WTvsKOBySexIHCAnalysis
 
 ANALYSIS_REGISTRY = {
     "PCDHvsLHX6_WTvsKO_IHC": PCDHvsLHX6_WTvsKOIHCAnalysis,
     "NestinvsDcx_WTvsKO_IHC": NestinvsDcx_WTvsKOIHCAnalysis,
     "NestinvsDcx_MaleVsFemale_IHC": NestinvsDcx_MaleVsFemaleIHCAnalysis,
+    "NestinvsDcx_WTvsKO_BySex_IHC": NestinvsDcx_WTvsKOBySexIHCAnalysis,
     # Future analyses can be added here, e.g. "NewQuestion": NewAnalysisClass,
 }
 
@@ -23,5 +25,6 @@ __all__ = [
     "PCDHvsLHX6_WTvsKOIHCAnalysis",
     "NestinvsDcx_WTvsKOIHCAnalysis",
     "NestinvsDcx_MaleVsFemaleIHCAnalysis",
+    "NestinvsDcx_WTvsKOBySexIHCAnalysis",
     "ANALYSIS_REGISTRY",
 ]

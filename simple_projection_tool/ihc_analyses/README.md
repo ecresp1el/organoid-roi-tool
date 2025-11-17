@@ -121,6 +121,28 @@ python simple_projection_tool/run_projection_analysis.py \
 - Samples missing an `F` or `M` token in their folder name are skipped so the
   comparison only includes labelled runs.
 
+### `NestinvsDcx_WTvsKO_BySex_IHC`
+
+*Location:* [`nestin_vs_dcx_by_sex.py`](./nestin_vs_dcx_by_sex.py)
+
+Runs the original WT vs KO analysis twice—once for Female samples and once for
+Male samples—so you can inspect genotype effects within each sex without
+launching multiple commands. Use it exactly like the other analyses:
+
+```bash
+python simple_projection_tool/run_projection_analysis.py \
+    NestinvsDcx_WTvsKO_BySex_IHC \
+    --base-path /Volumes/Manny4TBUM/10_13_2025/nestin_dcx_pcdh19_kovswt
+```
+
+- Output structure mirrors the standard pipeline but adds a `female_` or
+  `male_` prefix inside `analysis_pipeline/` so each sex retains its own
+  figures/CSVs.
+- Each sex-specific run keeps the WT vs KO comparison intact (box/SEM plots,
+  Welch t-tests, Mann-Whitney tests, per-image summary panels).
+- If a sex token is missing in the folder name, that run is skipped and noted
+  in the console log.
+
 ### Pixel handling cheat-sheet for imaging scientists
 
 - Each projection TIFF is read exactly as exported (unsigned 16-bit). The
