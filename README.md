@@ -761,3 +761,68 @@ python prepare_volumetric_data_labtalk.py /path/to/ims \
 Outputs:
 - `*_red_green_merged.tif` per input file
 - `prepared_manifest.csv` with source path, output path, selected red/green channel indexes, and image dimensions
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+
+### Exact run order (copy/paste)
+
+1) Open Terminal and go to this repo:
+
+```bash
+cd /path/to/organoid-roi-tool
+```
+
+2) Activate the Conda environment:
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+```
+
+3) Confirm the script is available:
+
+```bash
+python prepare_volumetric_data_labtalk.py --help
+```
+
+4) Run on your `.ims` folder (replace with your real path):
+
+```bash
+python prepare_volumetric_data_labtalk.py "/path/to/folder/with/ims" \
+  --output-dir ~/Desktop/volumetric_labtalk_outputs \
+  --recursive
+```
+
+5) Verify outputs were written:
+
+```bash
+ls ~/Desktop/volumetric_labtalk_outputs
+```
+
+### Then what?
+
+- Open `~/Desktop/volumetric_labtalk_outputs`.
+- For each input `.ims`, you should now have one TIFF strip containing:
+  1. red-only panel,
+  2. green-only panel,
+  3. merged red+green panel.
+- Open `prepared_manifest.csv` in Excel/Sheets to programmatically track which source file mapped to which output and which channel indices were used.
+- Use the generated TIFFs as the handoff into your LabTalk/Origin workflow (quick visual QC + batch ingest).
+
+If you get a missing-package error, install deps in that same env and rerun:
+
+```bash
+conda install -n organoid_roi_incucyte_imaging h5py numpy tifffile
+```
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
