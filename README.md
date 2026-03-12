@@ -733,3 +733,31 @@ Shortcut: one‑click sample data on macOS
 ```
 export TIMES="00:00 06:00 12:00"; export DAYS="01 02"; ./RUN_MakeSampleData_mac_Conda.command
 ```
+
+## Prepare volumetric `.ims` data for LabTalk (red / green / merged)
+
+Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels:
+
+1. red-only max projection
+2. green-only max projection
+3. merged red+green max projection
+
+**Yes — run this inside your Conda env** so `h5py`, `numpy`, and `tifffile` are available.
+
+```bash
+conda activate organoid_roi_incucyte_imaging
+python prepare_volumetric_data_labtalk.py /path/to/folder/with/ims
+```
+
+Useful options:
+
+```bash
+python prepare_volumetric_data_labtalk.py /path/to/ims \
+  --output-dir ~/Desktop/volumetric_labtalk_outputs \
+  --recursive \
+  --overwrite
+```
+
+Outputs:
+- `*_red_green_merged.tif` per input file
+- `prepared_manifest.csv` with source path, output path, selected red/green channel indexes, and image dimensions
