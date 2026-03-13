@@ -54,12 +54,18 @@ def test_prepare_all_generates_triptych_and_manifest(tmp_path: Path) -> None:
     assert record.green_channel_index == 1
 
     output_image = tiff.imread(record.output_path)
+<<<<<<< ours
     assert output_image.shape == (2, 6, 3)
+=======
+    # 3 panels of width 2 + (gap=4, bar=14) per panel => 6 + 54
+    assert output_image.shape == (2, 60, 3)
+>>>>>>> theirs
 
     # red-only panel
     np.testing.assert_array_equal(output_image[:, :2, 1], 0)
     assert output_image[:, :2, 0].max() > 0
 
+<<<<<<< ours
     # green-only panel
     np.testing.assert_array_equal(output_image[:, 2:4, 0], 0)
     assert output_image[:, 2:4, 1].max() > 0
@@ -67,11 +73,27 @@ def test_prepare_all_generates_triptych_and_manifest(tmp_path: Path) -> None:
     # merged panel contains both channels
     assert output_image[:, 4:6, 0].max() > 0
     assert output_image[:, 4:6, 1].max() > 0
+=======
+    # green-only panel starts after red panel + gap + bar
+    green_start = 2 + 4 + 14
+    np.testing.assert_array_equal(output_image[:, green_start : green_start + 2, 0], 0)
+    assert output_image[:, green_start : green_start + 2, 1].max() > 0
+
+    # merged panel starts after second panel block
+    merged_start = green_start + 2 + 4 + 14
+    assert output_image[:, merged_start : merged_start + 2, 0].max() > 0
+    assert output_image[:, merged_start : merged_start + 2, 1].max() > 0
+>>>>>>> theirs
 
     manifest = output_dir / "prepared_manifest.csv"
     assert manifest.exists()
     text = manifest.read_text(encoding="utf-8")
     assert "sample.ims" in text
+<<<<<<< ours
+=======
+    assert "red_min_value" in text
+    assert "green_max_value" in text
+>>>>>>> theirs
 
 
 def test_prepare_all_skips_without_overwrite(tmp_path: Path) -> None:
@@ -87,3 +109,25 @@ def test_prepare_all_skips_without_overwrite(tmp_path: Path) -> None:
 
     assert len(first) == 1
     assert len(second) == 0
+<<<<<<< ours
+=======
+
+
+def test_prepare_without_scale_bars_retains_original_triptych_width(tmp_path: Path) -> None:
+    input_dir = tmp_path / "inputs"
+    input_dir.mkdir()
+    ims_file = input_dir / "sample.ims"
+    _create_two_channel_ims(ims_file)
+
+    output_dir = tmp_path / "out"
+    preparer = VolumetricDataLabtalkPreparer(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        include_scale_bars=False,
+    )
+    records = preparer.prepare_all()
+    assert len(records) == 1
+
+    output_image = tiff.imread(records[0].output_path)
+    assert output_image.shape == (2, 6, 3)
+>>>>>>> theirs
