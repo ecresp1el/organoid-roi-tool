@@ -68,7 +68,7 @@ class BrightfieldConfocalVolumePreparer:
 
     def __init__(
         self,
-        input_dir: Path,
+        input_path: Path,
         output_dir: Path,
         *,
         recursive: bool = False,
@@ -92,7 +92,7 @@ class BrightfieldConfocalVolumePreparer:
         scale_bar_width: int = 14,
         cli_args: Optional[list[str]] = None,
     ) -> None:
-        self.input_dir = input_dir.expanduser().resolve()
+        self.input_path = input_path.expanduser().resolve()
         self.output_dir = output_dir.expanduser().resolve()
         self.recursive = recursive
         self.overwrite = overwrite
@@ -116,16 +116,23 @@ class BrightfieldConfocalVolumePreparer:
         self.cli_args = list(cli_args or [])
 
     def discover_files(self) -> list[Path]:
+        if self.input_path.is_file():
+            if self.input_path.suffix.lower() != ".ims":
+                raise ValueError(f"Input file must have .ims extension: {self.input_path}")
+            return [self.input_path]
+
         iterator: Iterable[Path]
         if self.recursive:
-            iterator = self.input_dir.rglob("*.ims")
+            iterator = self.input_path.rglob("*.ims")
         else:
-            iterator = self.input_dir.glob("*.ims")
+            iterator = self.input_path.glob("*.ims")
         return sorted(path for path in iterator if path.is_file())
 
     def prepare_all(self) -> list[PreparedBrightfieldConfocalRecord]:
-        if not self.input_dir.exists() or not self.input_dir.is_dir():
-            raise FileNotFoundError(f"Input folder does not exist or is not a directory: {self.input_dir}")
+        if not self.input_path.exists():
+            raise FileNotFoundError(f"Input path does not exist: {self.input_path}")
+        if not self.input_path.is_dir() and not self.input_path.is_file():
+            raise FileNotFoundError(f"Input path is neither a directory nor a file: {self.input_path}")
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         ims_files = self.discover_files()
@@ -135,7 +142,7 @@ class BrightfieldConfocalVolumePreparer:
         self._write_json(run_metadata_path, run_metadata)
 
         print("[info] ================================================")
-        print(f"[info] Input directory: {self.input_dir}")
+        print(f"[info] Input path: {self.input_path}")
         print(f"[info] Output directory: {self.output_dir}")
         print(f"[info] .ims files discovered: {len(ims_files)}")
         print(f"[info] Recursive search: {self.recursive}")
@@ -331,7 +338,7 @@ class BrightfieldConfocalVolumePreparer:
             "working_directory": str(Path.cwd()),
             "python_executable": sys.executable,
             "cli_args": self.cli_args,
-            "input_dir": str(self.input_dir),
+            "input_path": str(self.input_path),
             "output_dir": str(self.output_dir),
             "ims_files_discovered": [str(path) for path in ims_files],
             "settings": self._settings_dict(),
@@ -811,7 +818,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "using a restricted z window."
         )
     )
-    parser.add_argument("input_dir", type=Path, help="Directory containing .ims files.")
+    parser.add_argument("input_path", type=Path, help="Path to a single .ims file or a directory containing .ims files.")
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -913,7 +920,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     preparer = BrightfieldConfocalVolumePreparer(
-        input_dir=args.input_dir,
+        input_path=args.input_path,
         output_dir=args.output_dir,
         recursive=args.recursive,
         overwrite=args.overwrite,

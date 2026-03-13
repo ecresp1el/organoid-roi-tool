@@ -931,12 +931,20 @@ The default z window is `90..672` inclusive and the output strip has 4 panels:
 3. red
 4. merged red+green
 
-Example:
+Example using a folder:
 
 ```bash
 python prepare_volumetric_data_brightfield_confocal.py "/path/to/folder/with/ims" \
   --output-dir ~/Desktop/volumetric_brightfield_confocal_outputs \
   --recursive \
+  --overwrite
+```
+
+Example using a single `.ims` file:
+
+```bash
+python prepare_volumetric_data_brightfield_confocal.py "/path/to/file.ims" \
+  --output-dir ~/Desktop/volumetric_brightfield_confocal_outputs \
   --overwrite
 ```
 
