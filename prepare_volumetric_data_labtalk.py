@@ -56,6 +56,7 @@ class VolumetricDataLabtalkPreparer:
         background_subtract_sigma: float = 12.0,
         median_filter_size: int = 3,
         preserve_edge_pixels: int = 6,
+        invert_display: bool = False,
         scale_low_percentile: float = 1.0,
         scale_high_percentile: float = 99.8,
         include_scale_bars: bool = True,
@@ -70,6 +71,7 @@ class VolumetricDataLabtalkPreparer:
         self.background_subtract_sigma = max(0.0, background_subtract_sigma)
         self.median_filter_size = max(0, int(median_filter_size))
         self.preserve_edge_pixels = max(0, int(preserve_edge_pixels))
+        self.invert_display = invert_display
         self.scale_low_percentile = scale_low_percentile
         self.scale_high_percentile = scale_high_percentile
         self.include_scale_bars = include_scale_bars
@@ -103,6 +105,7 @@ class VolumetricDataLabtalkPreparer:
             f"median filter size={self.median_filter_size}, "
             f"preserve edge pixels={self.preserve_edge_pixels}"
         )
+        print(f"[info] Invert display: {self.invert_display}")
         print(
             "[info] Display scaling percentiles: "
             f"{self.scale_low_percentile:.2f} -> {self.scale_high_percentile:.2f}"
@@ -246,6 +249,8 @@ class VolumetricDataLabtalkPreparer:
 
         clipped = np.clip(data, vmin, vmax)
         norm = (clipped - vmin) / (vmax - vmin)
+        if self.invert_display:
+            norm = 1.0 - norm
         return np.round(norm * 255.0).astype(np.uint8), (vmin, vmax)
 
     def _preprocess_projection(self, array: np.ndarray, *, channel_label: str) -> np.ndarray:
@@ -577,6 +582,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Keep this many pixels at each image edge unmodified to avoid filter boundary artifacts (default: %(default)s). Use 0 to disable.",
     )
     parser.add_argument(
+        "--invert-display",
+        action="store_true",
+        help="Invert the red/green display mapping so low values are white and high values are dark.",
+    )
+    parser.add_argument(
         "--scale-low-percentile",
         type=float,
         default=1.0,
@@ -614,6 +624,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         background_subtract_sigma=args.background_subtract_sigma,
         median_filter_size=args.median_filter_size,
         preserve_edge_pixels=args.preserve_edge_pixels,
+        invert_display=args.invert_display,
         scale_low_percentile=args.scale_low_percentile,
         scale_high_percentile=args.scale_high_percentile,
         include_scale_bars=not args.no_scale_bars,
