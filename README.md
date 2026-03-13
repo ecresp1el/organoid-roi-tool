@@ -968,3 +968,41 @@ To change the z window:
 ```bash
 --z-start 120 --z-end 540
 ```
+
+## Render brightfield/confocal z-stack movies as 1x4 MP4 panels
+
+Use `prepare_volumetric_movie_brightfield_confocal.py` to render synchronized z-stack movies with 4 panels:
+
+1. brightfield
+2. green
+3. red
+4. merged red+green
+
+This uses the same default channel names and z window as the brightfield/confocal preview script, but renders one movie frame per z slice instead of a max projection.
+
+Example:
+
+```bash
+python prepare_volumetric_movie_brightfield_confocal.py "/path/to/file.ims" \
+  --output-dir ~/Desktop/volumetric_brightfield_confocal_movies \
+  --overwrite \
+  --z-start 90 \
+  --z-end 672 \
+  --background-subtract-sigma 5 \
+  --median-filter-size 3 \
+  --preserve-edge-pixels 0 \
+  --scale-mode percentile \
+  --scale-low-percentile 0 \
+  --scale-high-percentile 99.5 \
+  --fps 12
+```
+
+Movie output keeps the same provenance pattern:
+- one MP4 per input file
+- one `*.metadata.json` sidecar per MP4
+- one `prepared_manifest.csv`
+- one `preparation_run_metadata.json`
+
+Important:
+- MP4 writing requires an ffmpeg-capable backend in the active environment.
+- If the script raises an MP4 writer error, install `ffmpeg` or `imageio-ffmpeg` in the same Conda environment and rerun.
