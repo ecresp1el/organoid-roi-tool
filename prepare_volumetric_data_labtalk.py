@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -57,10 +60,13 @@ class VolumetricDataLabtalkPreparer:
         median_filter_size: int = 3,
         preserve_edge_pixels: int = 6,
         invert_display: bool = False,
+        scale_mode: str = "percentile",
+        display_gamma: float = 1.0,
         scale_low_percentile: float = 1.0,
         scale_high_percentile: float = 99.8,
         include_scale_bars: bool = True,
         scale_bar_width: int = 14,
+        cli_args: Optional[list[str]] = None,
     ) -> None:
         self.input_dir = input_dir.expanduser().resolve()
         self.output_dir = output_dir.expanduser().resolve()
@@ -72,10 +78,13 @@ class VolumetricDataLabtalkPreparer:
         self.median_filter_size = max(0, int(median_filter_size))
         self.preserve_edge_pixels = max(0, int(preserve_edge_pixels))
         self.invert_display = invert_display
+        self.scale_mode = scale_mode
+        self.display_gamma = max(1e-6, float(display_gamma))
         self.scale_low_percentile = scale_low_percentile
         self.scale_high_percentile = scale_high_percentile
         self.include_scale_bars = include_scale_bars
         self.scale_bar_width = max(2, scale_bar_width)
+        self.cli_args = list(cli_args or [])
 
     def discover_files(self) -> list[Path]:
         iterator: Iterable[Path]
@@ -92,6 +101,9 @@ class VolumetricDataLabtalkPreparer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         ims_files = self.discover_files()
         records: list[PreparedVolumeRecord] = []
+        run_metadata_path = self.output_dir / "preparation_run_metadata.json"
+        run_metadata = self._build_run_metadata(ims_files=ims_files)
+        self._write_run_metadata(run_metadata_path, run_metadata)
 
         print("[info] ================================================")
         print(f"[info] Input directory: {self.input_dir}")
@@ -107,10 +119,12 @@ class VolumetricDataLabtalkPreparer:
         )
         print(f"[info] Invert display: {self.invert_display}")
         print(
-            "[info] Display scaling percentiles: "
-            f"{self.scale_low_percentile:.2f} -> {self.scale_high_percentile:.2f}"
+            "[info] Display scaling: "
+            f"mode={self.scale_mode}, gamma={self.display_gamma:.3f}, "
+            f"percentiles={self.scale_low_percentile:.2f}->{self.scale_high_percentile:.2f}"
         )
         print(f"[info] Include per-panel scale bars: {self.include_scale_bars}")
+        print(f"[info] Run metadata JSON: {run_metadata_path}")
         print("[info] ================================================")
 
         for file_index, ims_path in enumerate(ims_files, start=1):
@@ -149,7 +163,23 @@ class VolumetricDataLabtalkPreparer:
             if self.include_scale_bars:
                 strip = self._append_scale_bars(strip, red_scale, green_scale)
 
-            tiff.imwrite(output_path, strip, photometric="rgb")
+            tiff.imwrite(
+                output_path,
+                strip,
+                photometric="rgb",
+                description=json.dumps(
+                    self._build_image_metadata(
+                        ims_path=ims_path,
+                        output_path=output_path,
+                        run_metadata_path=run_metadata_path,
+                        red_idx=red_idx,
+                        green_idx=green_idx,
+                        red_scale=red_scale,
+                        green_scale=green_scale,
+                    ),
+                    indent=2,
+                ),
+            )
             record = PreparedVolumeRecord(
                 source_path=ims_path,
                 output_path=output_path,
@@ -172,9 +202,66 @@ class VolumetricDataLabtalkPreparer:
             )
 
         manifest = self.output_dir / "prepared_manifest.csv"
-        self._write_manifest(records, manifest)
+        self._write_manifest(records, manifest, run_metadata_path=run_metadata_path)
         print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
         return records
+
+    def _settings_dict(self) -> dict[str, object]:
+        return {
+            "recursive": self.recursive,
+            "overwrite": self.overwrite,
+            "resolution_level": self.resolution_level,
+            "time_point": self.time_point,
+            "background_subtract_sigma": self.background_subtract_sigma,
+            "median_filter_size": self.median_filter_size,
+            "preserve_edge_pixels": self.preserve_edge_pixels,
+            "invert_display": self.invert_display,
+            "scale_mode": self.scale_mode,
+            "display_gamma": self.display_gamma,
+            "scale_low_percentile": self.scale_low_percentile,
+            "scale_high_percentile": self.scale_high_percentile,
+            "include_scale_bars": self.include_scale_bars,
+            "scale_bar_width": self.scale_bar_width,
+        }
+
+    def _build_run_metadata(self, *, ims_files: list[Path]) -> dict[str, object]:
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "script": str(Path(__file__).resolve()),
+            "working_directory": str(Path.cwd()),
+            "python_executable": sys.executable,
+            "cli_args": self.cli_args,
+            "input_dir": str(self.input_dir),
+            "output_dir": str(self.output_dir),
+            "ims_files_discovered": [str(path) for path in ims_files],
+            "settings": self._settings_dict(),
+        }
+
+    @staticmethod
+    def _write_run_metadata(path: Path, payload: dict[str, object]) -> None:
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _build_image_metadata(
+        self,
+        *,
+        ims_path: Path,
+        output_path: Path,
+        run_metadata_path: Path,
+        red_idx: int,
+        green_idx: int,
+        red_scale: tuple[float, float],
+        green_scale: tuple[float, float],
+    ) -> dict[str, object]:
+        return {
+            "source_path": str(ims_path),
+            "output_path": str(output_path),
+            "run_metadata_path": str(run_metadata_path),
+            "red_channel_index": red_idx,
+            "green_channel_index": green_idx,
+            "red_display_range": {"min": red_scale[0], "max": red_scale[1]},
+            "green_display_range": {"min": green_scale[0], "max": green_scale[1]},
+            "settings": self._settings_dict(),
+        }
 
     def _resolve_red_green_channels(self, ims_path: Path) -> tuple[Optional[int], Optional[int]]:
         metadata = read_metadata(
@@ -239,8 +326,12 @@ class VolumetricDataLabtalkPreparer:
         if finite.size == 0:
             return np.zeros_like(data, dtype=np.uint8), (0.0, 0.0)
 
-        vmin = float(np.percentile(finite, self.scale_low_percentile))
-        vmax = float(np.percentile(finite, self.scale_high_percentile))
+        if self.scale_mode == "full-range":
+            vmin = float(np.min(finite))
+            vmax = float(np.max(finite))
+        else:
+            vmin = float(np.percentile(finite, self.scale_low_percentile))
+            vmax = float(np.percentile(finite, self.scale_high_percentile))
         if vmax <= vmin:
             vmax = float(np.max(finite))
             vmin = float(np.min(finite))
@@ -249,6 +340,8 @@ class VolumetricDataLabtalkPreparer:
 
         clipped = np.clip(data, vmin, vmax)
         norm = (clipped - vmin) / (vmax - vmin)
+        if self.display_gamma != 1.0:
+            norm = np.power(norm, self.display_gamma)
         if self.invert_display:
             norm = 1.0 - norm
         return np.round(norm * 255.0).astype(np.uint8), (vmin, vmax)
@@ -514,14 +607,20 @@ class VolumetricDataLabtalkPreparer:
 
         canvas[:, x0 : x0 + width, :] = np.asarray(image, dtype=np.uint8)
 
-    @staticmethod
-    def _write_manifest(records: list[PreparedVolumeRecord], path: Path) -> None:
+    def _write_manifest(
+        self,
+        records: list[PreparedVolumeRecord],
+        path: Path,
+        *,
+        run_metadata_path: Path,
+    ) -> None:
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
                 handle,
                 fieldnames=[
                     "source_path",
                     "output_path",
+                    "run_metadata_path",
                     "red_channel_index",
                     "green_channel_index",
                     "height_px",
@@ -530,6 +629,20 @@ class VolumetricDataLabtalkPreparer:
                     "red_max_value",
                     "green_min_value",
                     "green_max_value",
+                    "recursive",
+                    "overwrite",
+                    "resolution_level",
+                    "time_point",
+                    "background_subtract_sigma",
+                    "median_filter_size",
+                    "preserve_edge_pixels",
+                    "invert_display",
+                    "scale_mode",
+                    "display_gamma",
+                    "scale_low_percentile",
+                    "scale_high_percentile",
+                    "include_scale_bars",
+                    "scale_bar_width",
                 ],
             )
             writer.writeheader()
@@ -538,6 +651,7 @@ class VolumetricDataLabtalkPreparer:
                     {
                         "source_path": str(record.source_path),
                         "output_path": str(record.output_path),
+                        "run_metadata_path": str(run_metadata_path),
                         "red_channel_index": record.red_channel_index,
                         "green_channel_index": record.green_channel_index,
                         "height_px": record.height_px,
@@ -546,6 +660,20 @@ class VolumetricDataLabtalkPreparer:
                         "red_max_value": f"{record.red_max_value:.6g}",
                         "green_min_value": f"{record.green_min_value:.6g}",
                         "green_max_value": f"{record.green_max_value:.6g}",
+                        "recursive": self.recursive,
+                        "overwrite": self.overwrite,
+                        "resolution_level": self.resolution_level,
+                        "time_point": self.time_point,
+                        "background_subtract_sigma": f"{self.background_subtract_sigma:.6g}",
+                        "median_filter_size": self.median_filter_size,
+                        "preserve_edge_pixels": self.preserve_edge_pixels,
+                        "invert_display": self.invert_display,
+                        "scale_mode": self.scale_mode,
+                        "display_gamma": f"{self.display_gamma:.6g}",
+                        "scale_low_percentile": f"{self.scale_low_percentile:.6g}",
+                        "scale_high_percentile": f"{self.scale_high_percentile:.6g}",
+                        "include_scale_bars": self.include_scale_bars,
+                        "scale_bar_width": self.scale_bar_width,
                     }
                 )
 
@@ -587,6 +715,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Invert the red/green display mapping so low values are white and high values are dark.",
     )
     parser.add_argument(
+        "--scale-mode",
+        choices=("percentile", "full-range"),
+        default="percentile",
+        help="Display scaling mode. 'percentile' clips by display percentiles; 'full-range' uses the actual min/max without percentile clipping.",
+    )
+    parser.add_argument(
+        "--display-gamma",
+        type=float,
+        default=1.0,
+        help="Gamma applied after display normalization. Values below 1 brighten dim structure without percentile clipping (default: %(default)s).",
+    )
+    parser.add_argument(
         "--scale-low-percentile",
         type=float,
         default=1.0,
@@ -625,10 +765,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         median_filter_size=args.median_filter_size,
         preserve_edge_pixels=args.preserve_edge_pixels,
         invert_display=args.invert_display,
+        scale_mode=args.scale_mode,
+        display_gamma=args.display_gamma,
         scale_low_percentile=args.scale_low_percentile,
         scale_high_percentile=args.scale_high_percentile,
         include_scale_bars=not args.no_scale_bars,
         scale_bar_width=args.scale_bar_width,
+        cli_args=(argv if argv is not None else sys.argv[1:]),
     )
     preparer.prepare_all()
     return 0

@@ -736,40 +736,22 @@ export TIMES="00:00 06:00 12:00"; export DAYS="01 02"; ./RUN_MakeSampleData_mac_
 
 ## Prepare volumetric `.ims` data for LabTalk (red / green / merged)
 
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
 Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels:
-=======
-Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
->>>>>>> theirs
-=======
-Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
->>>>>>> theirs
-=======
-Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
->>>>>>> theirs
-=======
-Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
->>>>>>> theirs
-=======
-Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
->>>>>>> theirs
 
 1. red-only max projection
 2. green-only max projection
 3. merged red+green max projection
 
-**Yes — run this inside your Conda env** so `h5py`, `numpy`, and `tifffile` are available.
+The red and green panels include labeled intensity scale bars by default. The merged panel intentionally has no scale bar.
+
+Run this inside your Conda env so `h5py`, `numpy`, and `tifffile` are available:
 
 ```bash
 conda activate organoid_roi_incucyte_imaging
 python prepare_volumetric_data_labtalk.py /path/to/folder/with/ims
 ```
 
-Useful options:
+Useful base command:
 
 ```bash
 python prepare_volumetric_data_labtalk.py /path/to/ims \
@@ -780,133 +762,151 @@ python prepare_volumetric_data_labtalk.py /path/to/ims \
 
 Outputs:
 - `*_red_green_merged.tif` per input file
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-- `prepared_manifest.csv` with source path, output path, selected red/green channel indexes, and image dimensions
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
 - `prepared_manifest.csv` with source/output paths, selected red/green channel indexes, image dimensions, and display intensity ranges used for red/green scaling
+- `preparation_run_metadata.json` with the exact CLI arguments, script path, working directory, discovered `.ims` files, and all processing/display settings used for that run
 
-
-If your previews look too dim/bright, tune display scaling:
-
-```bash
-python prepare_volumetric_data_labtalk.py /path/to/ims \
-  --scale-low-percentile 0.5 \
-  --scale-high-percentile 99.9
-```
+Each output TIFF also stores a JSON `ImageDescription` block containing the source path, selected channel indices, display ranges, and a pointer back to `preparation_run_metadata.json`.
 
 Disable scale bars if you only want the raw 1x3 strip:
 
 ```bash
 python prepare_volumetric_data_labtalk.py /path/to/ims --no-scale-bars
 ```
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
 
 ### Exact run order (copy/paste)
 
-1) Open Terminal and go to this repo:
+1. Open Terminal and go to this repo:
 
 ```bash
 cd /path/to/organoid-roi-tool
 ```
 
-2) Activate the Conda environment:
+2. Activate the Conda environment:
 
 ```bash
 conda activate organoid_roi_incucyte_imaging
 ```
 
-3) Confirm the script is available:
+3. Confirm the script is available:
 
 ```bash
 python prepare_volumetric_data_labtalk.py --help
 ```
 
-4) Run on your `.ims` folder (replace with your real path):
+4. Run on your `.ims` folder:
 
 ```bash
 python prepare_volumetric_data_labtalk.py "/path/to/folder/with/ims" \
   --output-dir ~/Desktop/volumetric_labtalk_outputs \
-  --recursive
+  --recursive \
+  --overwrite
 ```
 
-5) Verify outputs were written:
+5. Verify outputs were written:
 
 ```bash
 ls ~/Desktop/volumetric_labtalk_outputs
 ```
 
+### Example settings
+
+Settings that preserve your current bright display workflow:
+
+```bash
+python prepare_volumetric_data_labtalk.py "/path/to/folder/with/ims" \
+  --output-dir ~/Desktop/volumetric_labtalk_outputs \
+  --recursive \
+  --overwrite \
+  --background-subtract-sigma 5 \
+  --median-filter-size 2 \
+  --preserve-edge-pixels 0 \
+  --scale-mode percentile \
+  --scale-low-percentile 0 \
+  --scale-high-percentile 99.5
+```
+
+### What each setting does
+
+`--background-subtract-sigma`
+- Higher value: subtracts a broader, smoother background estimate.
+- Lower value: acts more locally and can remove dim broad structure more aggressively.
+- `0`: disables background subtraction.
+
+`--median-filter-size`
+- Higher value: removes more isolated speckly pixels.
+- Lower value: preserves fine puncta and texture.
+- `0` or `1`: disables the median filter.
+- In practice, `3` is usually the first real speckle-removal setting.
+
+`--preserve-edge-pixels`
+- Higher value: leaves a wider untouched border to avoid edge artifacts.
+- Lower value: preprocessing reaches closer to the image edge.
+- `0`: disables border preservation.
+
+`--scale-mode percentile`
+- Uses the chosen lower and upper percentiles only for display mapping.
+- This does not change the source `.ims` file or the computed max projection data.
+
+`--scale-mode full-range`
+- Uses the actual min/max of the processed projection for display mapping.
+- Useful when you want to avoid percentile-based display truncation.
+
+`--scale-low-percentile`
+- Higher value: darkens more low-end background and increases contrast.
+- Lower value: keeps more dim background visible.
+
+`--scale-high-percentile`
+- Lower value: makes the image brighter because values reach the top of the display range sooner.
+- Higher value: preserves more bright-end headroom and usually looks dimmer.
+
+`--display-gamma`
+- Lower than `1.0`: brightens dim structure without changing the chosen display min/max.
+- Higher than `1.0`: darkens dim structure.
+- `1.0`: linear display mapping.
+
+`--invert-display`
+- Inverts the red/green display mapping.
+- Usually not helpful for max projections with substantial background.
+
+### Speckly noise without changing overall brightness
+
+If your current command already has the brightness you want, the cleanest next change is:
+
+```bash
+--median-filter-size 3
+```
+
+That is the most direct control for isolated speckly pixels and does not require changing your percentile brightness settings.
+
+Suggested command:
+
+```bash
+python prepare_volumetric_data_labtalk.py "/path/to/folder/with/ims" \
+  --output-dir ~/Desktop/volumetric_labtalk_outputs \
+  --recursive \
+  --overwrite \
+  --background-subtract-sigma 5 \
+  --median-filter-size 3 \
+  --preserve-edge-pixels 0 \
+  --scale-mode percentile \
+  --scale-low-percentile 0 \
+  --scale-high-percentile 99.5
+```
+
+If `3` removes too much fine detail, go back to `2`. If speckles remain, try `5`, but expect more suppression of tiny real structures.
+
 ### Then what?
 
 - Open `~/Desktop/volumetric_labtalk_outputs`.
 - For each input `.ims`, you should now have one TIFF strip containing:
-  1. red-only panel,
-  2. green-only panel,
-  3. merged red+green panel.
-- Open `prepared_manifest.csv` in Excel/Sheets to programmatically track which source file mapped to which output and which channel indices were used.
-- Use the generated TIFFs as the handoff into your LabTalk/Origin workflow (quick visual QC + batch ingest).
+  1. red-only panel
+  2. green-only panel
+  3. merged red+green panel
+- Open `prepared_manifest.csv` in Excel/Sheets to track which source file mapped to which output and which channel indices were used.
+- Use the generated TIFFs as the handoff into your LabTalk/Origin workflow.
 
 If you get a missing-package error, install deps in that same env and rerun:
 
 ```bash
 conda install -n organoid_roi_incucyte_imaging h5py numpy tifffile
 ```
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
