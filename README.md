@@ -909,3 +909,54 @@ If you get a missing-package error, install deps in that same env and rerun:
 ```bash
 conda install -n organoid_roi_incucyte_imaging h5py numpy tifffile
 ```
+
+## Prepare brightfield/confocal `.ims` data with a restricted z window
+
+Use `prepare_volumetric_data_brightfield_confocal.py` when the required channels are:
+
+1. `White Light - Brightfield`
+2. `Confocal - Green`
+3. `Confocal - Red`
+
+This workflow keeps the same output bookkeeping style as the red/green LabTalk prep:
+- one output TIFF per input file
+- one `*.metadata.json` sidecar per TIFF
+- one `prepared_manifest.csv`
+- one `preparation_run_metadata.json`
+
+The default z window is `90..672` inclusive and the output strip has 4 panels:
+
+1. brightfield
+2. green
+3. red
+4. merged red+green
+
+Example:
+
+```bash
+python prepare_volumetric_data_brightfield_confocal.py "/path/to/folder/with/ims" \
+  --output-dir ~/Desktop/volumetric_brightfield_confocal_outputs \
+  --recursive \
+  --overwrite
+```
+
+If you want the same display tuning style as the red/green script:
+
+```bash
+python prepare_volumetric_data_brightfield_confocal.py "/path/to/folder/with/ims" \
+  --output-dir ~/Desktop/volumetric_brightfield_confocal_outputs \
+  --recursive \
+  --overwrite \
+  --background-subtract-sigma 5 \
+  --median-filter-size 3 \
+  --preserve-edge-pixels 0 \
+  --scale-mode percentile \
+  --scale-low-percentile 0 \
+  --scale-high-percentile 99.5
+```
+
+To change the z window:
+
+```bash
+--z-start 120 --z-end 540
+```
