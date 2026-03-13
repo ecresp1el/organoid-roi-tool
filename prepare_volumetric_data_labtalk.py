@@ -254,11 +254,11 @@ class VolumetricDataLabtalkPreparer:
         raw_max = float(np.max(processed))
 
         if self.background_subtract_sigma > 0:
-            background = gaussian_filter(processed, sigma=self.background_subtract_sigma)
+            background = gaussian_filter(processed, sigma=self.background_subtract_sigma, mode="nearest")
             processed = np.clip(processed - background, 0.0, None)
 
         if self.median_filter_size >= 3:
-            processed = median_filter(processed, size=self.median_filter_size)
+            processed = median_filter(processed, size=self.median_filter_size, mode="nearest")
 
         print(
             "[info] Preprocessed "
@@ -379,12 +379,15 @@ class VolumetricDataLabtalkPreparer:
         red_scale: tuple[float, float],
         green_scale: tuple[float, float],
     ) -> np.ndarray:
+        from PIL import Image, ImageDraw, ImageFont
+
         height, width, _ = strip.shape
         panel_width = width // 3
         gap = 8
         bar = max(12, self.scale_bar_width)
+        label_width = 92
 
-        out = np.full((height, width + 3 * (gap + bar), 3), 18, dtype=np.uint8)
+        out = np.full((height, width + 2 * (gap + bar + label_width), 3), 18, dtype=np.uint8)
         cursor = 0
 
         gradient = np.linspace(255, 0, num=height, dtype=np.uint8)[:, None]
@@ -402,6 +405,16 @@ class VolumetricDataLabtalkPreparer:
         red_bar[-2:, :, :] = 255
         out[:, cursor : cursor + bar, :] = red_bar
         cursor += bar
+        self._draw_scale_labels(
+            out,
+            x0=cursor,
+            width=label_width,
+            color=(255, 255, 255),
+            scale=red_scale,
+            channel_name="Red",
+            image_api=(Image, ImageDraw, ImageFont),
+        )
+        cursor += label_width
 
         green_panel = strip[:, panel_width : (2 * panel_width), :]
         out[:, cursor : cursor + panel_width, :] = green_panel
@@ -416,28 +429,57 @@ class VolumetricDataLabtalkPreparer:
         green_bar[-2:, :, :] = 255
         out[:, cursor : cursor + bar, :] = green_bar
         cursor += bar
+        self._draw_scale_labels(
+            out,
+            x0=cursor,
+            width=label_width,
+            color=(255, 255, 255),
+            scale=green_scale,
+            channel_name="Green",
+            image_api=(Image, ImageDraw, ImageFont),
+        )
+        cursor += label_width
 
         merged_panel = strip[:, (2 * panel_width) :, :]
         out[:, cursor : cursor + panel_width, :] = merged_panel
-        cursor += panel_width
-        out[:, cursor : cursor + gap, :] = 32
-        cursor += gap
-        merged_bar = np.zeros((height, bar, 3), dtype=np.uint8)
-        merged_bar[:, 1:-1, 0] = gradient
-        merged_bar[:, 1:-1, 1] = gradient
-        merged_bar[:, 0, :] = 255
-        merged_bar[:, -1, :] = 255
-        merged_bar[:2, :, :] = 255
-        merged_bar[-2:, :, :] = 255
-        out[:, cursor : cursor + bar, :] = merged_bar
 
         print(
             "[info] Added scale bars | "
             f"red={red_scale[0]:.3f}->{red_scale[1]:.3f}, "
             f"green={green_scale[0]:.3f}->{green_scale[1]:.3f}, "
-            "merged uses both channel scales"
+            "merged panel has no scale bar"
         )
         return out
+
+    @staticmethod
+    def _draw_scale_labels(
+        canvas: np.ndarray,
+        *,
+        x0: int,
+        width: int,
+        color: tuple[int, int, int],
+        scale: tuple[float, float],
+        channel_name: str,
+        image_api: tuple[object, object, object],
+    ) -> None:
+        Image, ImageDraw, ImageFont = image_api
+        label_region = canvas[:, x0 : x0 + width, :]
+        image = Image.fromarray(label_region, mode="RGB")
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.load_default()
+
+        max_text = f"{scale[1]:.3g}"
+        min_text = f"{scale[0]:.3g}"
+        title_text = channel_name
+
+        draw.text((4, 4), title_text, fill=color, font=font)
+        draw.text((4, 18), "max", fill=color, font=font)
+        draw.text((4, 30), max_text, fill=color, font=font)
+        bottom_y = max(4, image.height - 26)
+        draw.text((4, bottom_y - 12), "min", fill=color, font=font)
+        draw.text((4, bottom_y), min_text, fill=color, font=font)
+
+        canvas[:, x0 : x0 + width, :] = np.asarray(image, dtype=np.uint8)
 
     @staticmethod
     def _write_manifest(records: list[PreparedVolumeRecord], path: Path) -> None:
