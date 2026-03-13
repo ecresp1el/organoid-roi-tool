@@ -8,6 +8,10 @@ computes max-intensity projections, and exports a 1x3 RGB strip per file:
 3. Merged red+green
 
 <<<<<<< ours
+<<<<<<< ours
+=======
+By default, each panel includes a per-panel intensity scale bar.
+>>>>>>> theirs
 =======
 By default, each panel includes a per-panel intensity scale bar.
 >>>>>>> theirs
@@ -37,11 +41,17 @@ class PreparedVolumeRecord:
     height_px: int
     width_px: int
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
     red_min_value: float
     red_max_value: float
     green_min_value: float
     green_max_value: float
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 
 
@@ -58,11 +68,17 @@ class VolumetricDataLabtalkPreparer:
         resolution_level: int = 0,
         time_point: int = 0,
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
         scale_low_percentile: float = 1.0,
         scale_high_percentile: float = 99.8,
         include_scale_bars: bool = True,
         scale_bar_width: int = 14,
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
     ) -> None:
         self.input_dir = input_dir.expanduser().resolve()
@@ -72,11 +88,17 @@ class VolumetricDataLabtalkPreparer:
         self.resolution_level = resolution_level
         self.time_point = time_point
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
         self.scale_low_percentile = scale_low_percentile
         self.scale_high_percentile = scale_high_percentile
         self.include_scale_bars = include_scale_bars
         self.scale_bar_width = max(2, scale_bar_width)
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 
     def discover_files(self) -> list[Path]:
@@ -96,8 +118,11 @@ class VolumetricDataLabtalkPreparer:
         records: list[PreparedVolumeRecord] = []
 
 <<<<<<< ours
+<<<<<<< ours
         for ims_path in ims_files:
 =======
+=======
+>>>>>>> theirs
         print("[info] ================================================")
         print(f"[info] Input directory: {self.input_dir}")
         print(f"[info] Output directory: {self.output_dir}")
@@ -113,6 +138,9 @@ class VolumetricDataLabtalkPreparer:
 
         for file_index, ims_path in enumerate(ims_files, start=1):
             print(f"\n[info] Processing file {file_index}/{len(ims_files)}: {ims_path.name}")
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
             red_idx, green_idx = self._resolve_red_green_channels(ims_path)
             if red_idx is None or green_idx is None:
@@ -120,14 +148,20 @@ class VolumetricDataLabtalkPreparer:
                 continue
 
 <<<<<<< ours
+<<<<<<< ours
             _, projections = compute_max_projections(
 =======
+=======
+>>>>>>> theirs
             output_path = self.output_dir / f"{ims_path.stem}_red_green_merged.tif"
             if output_path.exists() and not self.overwrite:
                 print(f"[warn] Output exists, skipping (use --overwrite to replace): {output_path}")
                 continue
 
             metadata, projections = compute_max_projections(
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
                 ims_path,
                 resolution_level=self.resolution_level,
@@ -136,6 +170,7 @@ class VolumetricDataLabtalkPreparer:
             red_projection = projections[red_idx]
             green_projection = projections[green_idx]
 
+<<<<<<< ours
 <<<<<<< ours
             strip = self._compose_triptych(red_projection, green_projection)
             output_path = self.output_dir / f"{ims_path.stem}_red_green_merged.tif"
@@ -158,6 +193,8 @@ class VolumetricDataLabtalkPreparer:
             print(
                 f"[ok] {ims_path.name}: red=Channel {red_idx}, green=Channel {green_idx} -> {output_path.name}"
 =======
+=======
+>>>>>>> theirs
             red_channel_name = self._channel_name(metadata, red_idx)
             green_channel_name = self._channel_name(metadata, green_idx)
             print(f"[info] Selected channels -> red: {red_idx} ({red_channel_name}), green: {green_idx} ({green_channel_name})")
@@ -186,13 +223,20 @@ class VolumetricDataLabtalkPreparer:
                 f"shape={strip.shape} | "
                 f"red scale=[{red_scale[0]:.3f}, {red_scale[1]:.3f}] | "
                 f"green scale=[{green_scale[0]:.3f}, {green_scale[1]:.3f}]"
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
             )
 
         manifest = self.output_dir / "prepared_manifest.csv"
         self._write_manifest(records, manifest)
 <<<<<<< ours
+<<<<<<< ours
         print(f"[info] Wrote manifest with {len(records)} record(s): {manifest}")
+=======
+        print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
+>>>>>>> theirs
 =======
         print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
 >>>>>>> theirs
@@ -227,7 +271,10 @@ class VolumetricDataLabtalkPreparer:
 
     @staticmethod
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
     def _channel_name(metadata: object, channel_index: int) -> str:
         channels = getattr(metadata, "channels", [])
         for channel in channels:
@@ -236,6 +283,9 @@ class VolumetricDataLabtalkPreparer:
         return f"Channel {channel_index}"
 
     @staticmethod
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
     def _channel_score(name: str, color_rgb: tuple[float, float, float], *, target: str) -> float:
         target = target.lower()
@@ -245,7 +295,11 @@ class VolumetricDataLabtalkPreparer:
         if target == "red":
             score = (2.0 * r) - (g + b)
 <<<<<<< ours
+<<<<<<< ours
             keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry")
+=======
+            keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry", "rfp")
+>>>>>>> theirs
 =======
             keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry", "rfp")
 >>>>>>> theirs
@@ -263,6 +317,7 @@ class VolumetricDataLabtalkPreparer:
         return score
 
 <<<<<<< ours
+<<<<<<< ours
     @staticmethod
     def _normalize_u8(array: np.ndarray) -> np.ndarray:
         data = array.astype(np.float32, copy=False)
@@ -275,6 +330,8 @@ class VolumetricDataLabtalkPreparer:
         red_u8 = self._normalize_u8(red_projection)
         green_u8 = self._normalize_u8(green_projection)
 =======
+=======
+>>>>>>> theirs
     def _normalize_u8(self, array: np.ndarray) -> tuple[np.ndarray, tuple[float, float]]:
         data = array.astype(np.float32, copy=False)
         finite = data[np.isfinite(data)]
@@ -300,6 +357,9 @@ class VolumetricDataLabtalkPreparer:
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         red_u8, red_scale = self._normalize_u8(red_projection)
         green_u8, green_scale = self._normalize_u8(green_projection)
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 
         red_rgb = np.zeros((*red_u8.shape, 3), dtype=np.uint8)
@@ -312,8 +372,11 @@ class VolumetricDataLabtalkPreparer:
         merged_rgb[..., 1] = green_u8
 
 <<<<<<< ours
+<<<<<<< ours
         return np.concatenate([red_rgb, green_rgb, merged_rgb], axis=1)
 =======
+=======
+>>>>>>> theirs
         strip = np.concatenate([red_rgb, green_rgb, merged_rgb], axis=1)
         return strip, red_scale, green_scale
 
@@ -373,6 +436,9 @@ class VolumetricDataLabtalkPreparer:
             "merged uses both channel scales"
         )
         return out
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 
     @staticmethod
@@ -388,11 +454,17 @@ class VolumetricDataLabtalkPreparer:
                     "height_px",
                     "width_px",
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
                     "red_min_value",
                     "red_max_value",
                     "green_min_value",
                     "green_max_value",
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
                 ],
             )
@@ -407,11 +479,17 @@ class VolumetricDataLabtalkPreparer:
                         "height_px": record.height_px,
                         "width_px": record.width_px,
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
                         "red_min_value": f"{record.red_min_value:.6g}",
                         "red_max_value": f"{record.red_max_value:.6g}",
                         "green_min_value": f"{record.green_min_value:.6g}",
                         "green_max_value": f"{record.green_max_value:.6g}",
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
                     }
                 )
@@ -431,7 +509,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--resolution-level", type=int, default=0)
     parser.add_argument("--time-point", type=int, default=0)
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
     parser.add_argument(
         "--scale-low-percentile",
         type=float,
@@ -455,6 +536,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=14,
         help="Scale bar width in pixels per panel (default: %(default)s).",
     )
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
     return parser.parse_args(argv)
 
@@ -469,11 +553,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         resolution_level=args.resolution_level,
         time_point=args.time_point,
 <<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
         scale_low_percentile=args.scale_low_percentile,
         scale_high_percentile=args.scale_high_percentile,
         include_scale_bars=not args.no_scale_bars,
         scale_bar_width=args.scale_bar_width,
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
     )
     preparer.prepare_all()
