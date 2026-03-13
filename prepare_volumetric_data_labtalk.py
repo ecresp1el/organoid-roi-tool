@@ -53,6 +53,8 @@ class VolumetricDataLabtalkPreparer:
         overwrite: bool = False,
         resolution_level: int = 0,
         time_point: int = 0,
+        background_subtract_sigma: float = 12.0,
+        smoothing_sigma: float = 0.6,
         scale_low_percentile: float = 1.0,
         scale_high_percentile: float = 99.8,
         include_scale_bars: bool = True,
@@ -64,6 +66,8 @@ class VolumetricDataLabtalkPreparer:
         self.overwrite = overwrite
         self.resolution_level = resolution_level
         self.time_point = time_point
+        self.background_subtract_sigma = max(0.0, background_subtract_sigma)
+        self.smoothing_sigma = max(0.0, smoothing_sigma)
         self.scale_low_percentile = scale_low_percentile
         self.scale_high_percentile = scale_high_percentile
         self.include_scale_bars = include_scale_bars
@@ -91,6 +95,11 @@ class VolumetricDataLabtalkPreparer:
         print(f"[info] .ims files discovered: {len(ims_files)}")
         print(f"[info] Recursive search: {self.recursive}")
         print(f"[info] Resolution level: {self.resolution_level}, time point: {self.time_point}")
+        print(
+            "[info] Preprocessing: "
+            f"background sigma={self.background_subtract_sigma:.2f}, "
+            f"smoothing sigma={self.smoothing_sigma:.2f}"
+        )
         print(
             "[info] Display scaling percentiles: "
             f"{self.scale_low_percentile:.2f} -> {self.scale_high_percentile:.2f}"
@@ -128,7 +137,9 @@ class VolumetricDataLabtalkPreparer:
                 channel_indices=(red_idx, green_idx),
             )
 
-            strip, red_scale, green_scale = self._compose_triptych(red_projection, green_projection)
+            red_processed = self._preprocess_projection(red_projection, channel_label=f"red ch{red_idx}")
+            green_processed = self._preprocess_projection(green_projection, channel_label=f"green ch{green_idx}")
+            strip, red_scale, green_scale = self._compose_triptych(red_processed, green_processed)
             if self.include_scale_bars:
                 strip = self._append_scale_bars(strip, red_scale, green_scale)
 
@@ -233,6 +244,28 @@ class VolumetricDataLabtalkPreparer:
         clipped = np.clip(data, vmin, vmax)
         norm = (clipped - vmin) / (vmax - vmin)
         return np.round(norm * 255.0).astype(np.uint8), (vmin, vmax)
+
+    def _preprocess_projection(self, array: np.ndarray, *, channel_label: str) -> np.ndarray:
+        from scipy.ndimage import gaussian_filter  # type: ignore
+
+        data = array.astype(np.float32, copy=False)
+        processed = np.array(data, copy=True)
+        raw_min = float(np.min(processed))
+        raw_max = float(np.max(processed))
+
+        if self.background_subtract_sigma > 0:
+            background = gaussian_filter(processed, sigma=self.background_subtract_sigma)
+            processed = np.clip(processed - background, 0.0, None)
+
+        if self.smoothing_sigma > 0:
+            processed = gaussian_filter(processed, sigma=self.smoothing_sigma)
+
+        print(
+            "[info] Preprocessed "
+            f"{channel_label}: raw_range=[{raw_min:.3f}, {raw_max:.3f}] -> "
+            f"processed_range=[{float(np.min(processed)):.3f}, {float(np.max(processed)):.3f}]"
+        )
+        return processed
 
     def _compose_triptych(
         self,
@@ -456,6 +489,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--resolution-level", type=int, default=0)
     parser.add_argument("--time-point", type=int, default=0)
     parser.add_argument(
+        "--background-subtract-sigma",
+        type=float,
+        default=12.0,
+        help="Gaussian sigma used to estimate and subtract background before scaling (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--smoothing-sigma",
+        type=float,
+        default=0.6,
+        help="Small Gaussian smoothing sigma applied after background subtraction (default: %(default)s).",
+    )
+    parser.add_argument(
         "--scale-low-percentile",
         type=float,
         default=1.0,
@@ -490,6 +535,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         overwrite=args.overwrite,
         resolution_level=args.resolution_level,
         time_point=args.time_point,
+        background_subtract_sigma=args.background_subtract_sigma,
+        smoothing_sigma=args.smoothing_sigma,
         scale_low_percentile=args.scale_low_percentile,
         scale_high_percentile=args.scale_high_percentile,
         include_scale_bars=not args.no_scale_bars,
