@@ -55,6 +55,7 @@ class VolumetricDataLabtalkPreparer:
         time_point: int = 0,
         background_subtract_sigma: float = 12.0,
         median_filter_size: int = 3,
+        preserve_edge_pixels: int = 6,
         scale_low_percentile: float = 1.0,
         scale_high_percentile: float = 99.8,
         include_scale_bars: bool = True,
@@ -68,6 +69,7 @@ class VolumetricDataLabtalkPreparer:
         self.time_point = time_point
         self.background_subtract_sigma = max(0.0, background_subtract_sigma)
         self.median_filter_size = max(0, int(median_filter_size))
+        self.preserve_edge_pixels = max(0, int(preserve_edge_pixels))
         self.scale_low_percentile = scale_low_percentile
         self.scale_high_percentile = scale_high_percentile
         self.include_scale_bars = include_scale_bars
@@ -98,7 +100,8 @@ class VolumetricDataLabtalkPreparer:
         print(
             "[info] Preprocessing: "
             f"background sigma={self.background_subtract_sigma:.2f}, "
-            f"median filter size={self.median_filter_size}"
+            f"median filter size={self.median_filter_size}, "
+            f"preserve edge pixels={self.preserve_edge_pixels}"
         )
         print(
             "[info] Display scaling percentiles: "
@@ -260,12 +263,37 @@ class VolumetricDataLabtalkPreparer:
         if self.median_filter_size >= 3:
             processed = median_filter(processed, size=self.median_filter_size, mode="nearest")
 
+        if self.preserve_edge_pixels > 0:
+            processed = self._restore_edge_pixels(
+                original=data,
+                processed=processed,
+                border=self.preserve_edge_pixels,
+            )
+
         print(
             "[info] Preprocessed "
             f"{channel_label}: raw_range=[{raw_min:.3f}, {raw_max:.3f}] -> "
             f"processed_range=[{float(np.min(processed)):.3f}, {float(np.max(processed)):.3f}]"
         )
         return processed
+
+    @staticmethod
+    def _restore_edge_pixels(
+        *,
+        original: np.ndarray,
+        processed: np.ndarray,
+        border: int,
+    ) -> np.ndarray:
+        if border <= 0:
+            return processed
+        height, width = processed.shape
+        border = min(border, height // 2 if height > 1 else 1, width // 2 if width > 1 else 1)
+        restored = np.array(processed, copy=True)
+        restored[:border, :] = original[:border, :]
+        restored[-border:, :] = original[-border:, :]
+        restored[:, :border] = original[:, :border]
+        restored[:, -border:] = original[:, -border:]
+        return restored
 
     def _compose_triptych(
         self,
@@ -543,6 +571,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Median filter window size applied after background subtraction to suppress grainy pixels (default: %(default)s). Use 0 or 1 to disable.",
     )
     parser.add_argument(
+        "--preserve-edge-pixels",
+        type=int,
+        default=6,
+        help="Keep this many pixels at each image edge unmodified to avoid filter boundary artifacts (default: %(default)s). Use 0 to disable.",
+    )
+    parser.add_argument(
         "--scale-low-percentile",
         type=float,
         default=1.0,
@@ -579,6 +613,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         time_point=args.time_point,
         background_subtract_sigma=args.background_subtract_sigma,
         median_filter_size=args.median_filter_size,
+        preserve_edge_pixels=args.preserve_edge_pixels,
         scale_low_percentile=args.scale_low_percentile,
         scale_high_percentile=args.scale_high_percentile,
         include_scale_bars=not args.no_scale_bars,
