@@ -1021,6 +1021,46 @@ python prepare_volumetric_movie_brightfield_confocal.py "/path/to/file.ims" \
 
 This keeps the same 1x4 panel layout, but every frame is rendered from the same square ROI window instead of the full field of view.
 
+## Prepare green-only volumetric `.ims` data as raw max projections
+
+Use `prepare_volumetric_data_green_only.py` when the data contain only a green channel and you want one max-projection TIFF per input file.
+
+This workflow writes:
+- one max-projection TIFF per input `.ims`
+- one `*.metadata.json` sidecar per TIFF
+- one `prepared_manifest.csv`
+- one `preparation_run_metadata.json`
+
+By default it writes a display-scaled green visualization TIFF with a labeled min/max scale bar. Use `--output-mode raw` if you want the unscaled `uint16` max projection instead. If you want a fixed visualization range such as `100..200`, add `--display-min 100 --display-max 200`.
+
+Example using a folder:
+
+```bash
+python prepare_volumetric_data_green_only.py "/path/to/folder/with/ims" \
+  --output-dir ~/Desktop/volumetric_green_only_outputs \
+  --overwrite
+```
+
+If a file has only one channel, that channel is used automatically. If a file has multiple channels, the default expected green name is `Confocal - Green`.
+
+To build a 2xN summary panel from the raw green max projections, grouped by `cl23` and `cl32` rows with one fixed display range for all tiles:
+
+```bash
+python build_green_only_panel_grid.py ~/Desktop/volumetric_green_only_outputs \
+  --output-path ~/Desktop/green_only_cl23_cl32_panel.tif \
+  --display-min 120 \
+  --display-max 180
+```
+
+To build a curated `2x3` panel from six already-rendered green visualization TIFFs:
+
+```bash
+python build_selected_green_panel.py \
+  --row1 /path/to/cl23_a.tif /path/to/cl23_b.tif /path/to/cl23_c.tif \
+  --row2 /path/to/cl32_a.tif /path/to/cl32_b.tif /path/to/cl32_c.tif \
+  --output-path ~/Desktop/selected_green_panel.tif
+```
+
 Movie output keeps the same provenance pattern:
 - one MP4 per input file
 - one `*.metadata.json` sidecar per MP4
