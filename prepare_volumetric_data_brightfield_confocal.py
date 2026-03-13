@@ -90,6 +90,7 @@ class BrightfieldConfocalVolumePreparer:
         scale_high_percentile: float = 99.5,
         include_scale_bars: bool = True,
         scale_bar_width: int = 14,
+        progress_interval: int = 25,
         cli_args: Optional[list[str]] = None,
     ) -> None:
         self.input_path = input_path.expanduser().resolve()
@@ -113,6 +114,7 @@ class BrightfieldConfocalVolumePreparer:
         self.scale_high_percentile = float(scale_high_percentile)
         self.include_scale_bars = include_scale_bars
         self.scale_bar_width = max(2, int(scale_bar_width))
+        self.progress_interval = max(1, int(progress_interval))
         self.cli_args = list(cli_args or [])
 
     def discover_files(self) -> list[Path]:
@@ -167,16 +169,19 @@ class BrightfieldConfocalVolumePreparer:
             f"percentiles={self.scale_low_percentile:.2f}->{self.scale_high_percentile:.2f}"
         )
         print(f"[info] Include green/red scale bars: {self.include_scale_bars}")
+        print(f"[info] Progress interval: every {self.progress_interval} z slices")
         print(f"[info] Run metadata JSON: {run_metadata_path}")
         print("[info] ================================================")
 
         for file_index, ims_path in enumerate(ims_files, start=1):
             print(f"\n[info] Processing file {file_index}/{len(ims_files)}: {ims_path.name}")
+            print(f"[step] Reading metadata: {ims_path}")
             metadata = read_metadata(
                 ims_path,
                 resolution_level=self.resolution_level,
                 time_point=self.time_point,
             )
+            print(f"[step] Metadata loaded. Channels reported: {len(getattr(metadata, 'channels', []))}")
             channel_map = self._resolve_required_channels(metadata)
             if channel_map is None:
                 print(
@@ -185,8 +190,16 @@ class BrightfieldConfocalVolumePreparer:
                     f"('{self.brightfield_channel_name}', '{self.green_channel_name}', '{self.red_channel_name}')."
                 )
                 continue
+            print(
+                "[step] Resolved channels: "
+                f"brightfield={channel_map['brightfield'][0]} ({channel_map['brightfield'][1]}), "
+                f"green={channel_map['green'][0]} ({channel_map['green'][1]}), "
+                f"red={channel_map['red'][0]} ({channel_map['red'][1]})"
+            )
 
+            print(f"[step] Opening Imaris file for z-windowed projections: {ims_path.name}")
             with h5py.File(ims_path, "r") as handle:
+                print("[step] Discovering channel datasets in file")
                 datasets = dict(
                     _discover_channels(
                         handle,
@@ -194,14 +207,24 @@ class BrightfieldConfocalVolumePreparer:
                         time_point=self.time_point,
                     )
                 )
+                print(f"[step] Dataset discovery complete. Found {len(datasets)} channel datasets.")
+                for dataset_index, dataset in sorted(datasets.items()):
+                    print(f"[step] Channel dataset {dataset_index}: shape={tuple(int(dim) for dim in dataset.shape)}")
+
+                print(f"[step] Computing brightfield projection over z={self.z_start}..{self.z_end}")
                 brightfield_projection, brightfield_window = self._compute_windowed_projection(
-                    datasets[channel_map["brightfield"][0]]
+                    datasets[channel_map["brightfield"][0]],
+                    channel_label=f"brightfield ch{channel_map['brightfield'][0]}",
                 )
+                print(f"[step] Computing green projection over z={self.z_start}..{self.z_end}")
                 green_projection, green_window = self._compute_windowed_projection(
-                    datasets[channel_map["green"][0]]
+                    datasets[channel_map["green"][0]],
+                    channel_label=f"green ch{channel_map['green'][0]}",
                 )
+                print(f"[step] Computing red projection over z={self.z_start}..{self.z_end}")
                 red_projection, red_window = self._compute_windowed_projection(
-                    datasets[channel_map["red"][0]]
+                    datasets[channel_map["red"][0]],
+                    channel_label=f"red ch{channel_map['red'][0]}",
                 )
 
                 self._print_projection_proof(
@@ -235,6 +258,7 @@ class BrightfieldConfocalVolumePreparer:
                 continue
 
             brightfield_processed = brightfield_projection.astype(np.float32, copy=False)
+            print("[step] Brightfield projection kept as-is for display mapping")
             green_processed = self._preprocess_fluorescence_projection(
                 green_projection,
                 channel_label=f"green ch{channel_map['green'][0]}",
@@ -244,12 +268,14 @@ class BrightfieldConfocalVolumePreparer:
                 channel_label=f"red ch{channel_map['red'][0]}",
             )
 
+            print("[step] Composing 1x4 output strip")
             strip, brightfield_scale, green_scale, red_scale = self._compose_quadtych(
                 brightfield_processed,
                 green_processed,
                 red_processed,
             )
             if self.include_scale_bars:
+                print("[step] Appending scale bars and numeric labels for green/red panels")
                 strip = self._append_scale_bars(
                     strip,
                     green_scale=green_scale,
@@ -257,7 +283,9 @@ class BrightfieldConfocalVolumePreparer:
                 )
 
             output_metadata_path = output_path.with_suffix(".metadata.json")
+            print(f"[step] Writing TIFF output: {output_path}")
             tiff.imwrite(output_path, strip, photometric="rgb")
+            print(f"[step] Writing sidecar metadata: {output_metadata_path}")
             self._write_json(
                 output_metadata_path,
                 self._build_image_metadata(
@@ -304,6 +332,7 @@ class BrightfieldConfocalVolumePreparer:
             )
 
         manifest = self.output_dir / "prepared_manifest.csv"
+        print(f"[step] Writing manifest CSV: {manifest}")
         self._write_manifest(records, manifest, run_metadata_path=run_metadata_path)
         print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
         return records
@@ -329,6 +358,7 @@ class BrightfieldConfocalVolumePreparer:
             "scale_high_percentile": self.scale_high_percentile,
             "include_scale_bars": self.include_scale_bars,
             "scale_bar_width": self.scale_bar_width,
+            "progress_interval": self.progress_interval,
         }
 
     def _build_run_metadata(self, *, ims_files: list[Path]) -> dict[str, object]:
@@ -407,11 +437,17 @@ class BrightfieldConfocalVolumePreparer:
     def _normalize_channel_name(name: str) -> str:
         return " ".join((name or "").strip().lower().split())
 
-    def _compute_windowed_projection(self, dataset: h5py.Dataset) -> tuple[np.ndarray, dict[str, int]]:
+    def _compute_windowed_projection(
+        self,
+        dataset: h5py.Dataset,
+        *,
+        channel_label: str,
+    ) -> tuple[np.ndarray, dict[str, int]]:
         if dataset.ndim < 3:
             data = np.asarray(dataset[()], dtype=np.float32)
             if data.ndim != 2:
                 raise ValueError("Expected a 2D or 3D dataset for projection")
+            print(f"[step] {channel_label}: dataset is 2D, no z projection needed")
             return data, {
                 "total_z": 1,
                 "z_start": 0,
@@ -425,11 +461,22 @@ class BrightfieldConfocalVolumePreparer:
 
         z_start = min(max(self.z_start, 0), total_z - 1)
         z_end = min(max(self.z_end, z_start), total_z - 1)
+        print(
+            f"[step] {channel_label}: total_z={total_z}, "
+            f"effective window={z_start}..{z_end} ({z_end - z_start + 1} slices)"
+        )
 
         proj = np.asarray(dataset[z_start, ...], dtype=np.float32)
+        print(f"[step] {channel_label}: loaded seed slice z={z_start}")
         for z_index in range(z_start + 1, z_end + 1):
             slice_data = np.asarray(dataset[z_index, ...], dtype=np.float32)
             np.maximum(proj, slice_data, out=proj)
+            local_count = z_index - z_start + 1
+            if local_count % self.progress_interval == 0 or z_index == z_end:
+                print(
+                    f"[progress] {channel_label}: processed {local_count}/{z_end - z_start + 1} "
+                    f"z slices (current z={z_index})"
+                )
 
         return proj, {
             "total_z": total_z,
@@ -471,15 +518,22 @@ class BrightfieldConfocalVolumePreparer:
         processed = np.array(data, copy=True)
         raw_min = float(np.min(processed))
         raw_max = float(np.max(processed))
+        print(f"[step] Starting fluorescence preprocessing for {channel_label}")
 
         if self.background_subtract_sigma > 0:
+            print(
+                f"[step] {channel_label}: subtracting background with gaussian sigma="
+                f"{self.background_subtract_sigma:.2f}"
+            )
             background = gaussian_filter(processed, sigma=self.background_subtract_sigma, mode="nearest")
             processed = np.clip(processed - background, 0.0, None)
 
         if self.median_filter_size >= 3:
+            print(f"[step] {channel_label}: applying median filter size={self.median_filter_size}")
             processed = median_filter(processed, size=self.median_filter_size, mode="nearest")
 
         if self.preserve_edge_pixels > 0:
+            print(f"[step] {channel_label}: restoring {self.preserve_edge_pixels} edge pixels after preprocessing")
             processed = self._restore_edge_pixels(
                 original=data,
                 processed=processed,
@@ -517,8 +571,11 @@ class BrightfieldConfocalVolumePreparer:
         green_projection: np.ndarray,
         red_projection: np.ndarray,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float], tuple[float, float]]:
+        print("[step] Normalizing brightfield panel for display")
         brightfield_u8, brightfield_scale = self._normalize_u8(brightfield_projection)
+        print("[step] Normalizing green panel for display")
         green_u8, green_scale = self._normalize_u8(green_projection)
+        print("[step] Normalizing red panel for display")
         red_u8, red_scale = self._normalize_u8(red_projection)
 
         brightfield_rgb = np.repeat(brightfield_u8[..., None], 3, axis=2)
@@ -914,6 +971,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=14,
         help="Scale bar width in pixels per labeled panel (default: %(default)s).",
     )
+    parser.add_argument(
+        "--progress-interval",
+        type=int,
+        default=25,
+        help="Print z-projection progress every N slices (default: %(default)s).",
+    )
     return parser.parse_args(argv)
 
 
@@ -941,6 +1004,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         scale_high_percentile=args.scale_high_percentile,
         include_scale_bars=not args.no_scale_bars,
         scale_bar_width=args.scale_bar_width,
+        progress_interval=args.progress_interval,
         cli_args=(argv if argv is not None else sys.argv[1:]),
     )
     preparer.prepare_all()
