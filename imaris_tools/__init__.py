@@ -1,19 +1,14 @@
 """
 Utilities for working with Imaris ``.ims`` files.
 
-The package exposes helpers to parse metadata, compute max intensity
-projections per channel, and batch process stitched directories of
-Imaris volumes. The core entry points are:
-
-* :func:`process_directory` – iterate over ``.ims`` files in a folder
-  and compute channel projections.
-* :func:`process_file` – read a single file and yield projections and
-  metadata.
-* :func:`compute_max_projections` – low-level helper that generates the
-  per-channel projection arrays.
-* :func:`export_directory` – produce metadata CSV reports and projection
-  images for a directory of Imaris volumes.
+Keep package import lightweight so CLI tools can start quickly without
+triggering plotting/font-cache setup unless those features are used.
 """
+
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
 
 from .metadata import (
     ImarisChannelMetadata,
@@ -23,15 +18,11 @@ from .metadata import (
     read_metadata,
 )
 from .projections import (
-    compute_max_projections,
     colorize_projection,
+    compute_max_projections,
     process_directory,
     process_file,
 )
-from .plotting import plot_folder_projection_grid, save_per_file_overview
-from .export import export_directory
-from .stats import compute_statistics, DEFAULT_STAT_FUNCS
-from .quicklook import save_fluorescent_max_projections
 
 __all__ = [
     "ImarisChannelMetadata",
@@ -50,3 +41,19 @@ __all__ = [
     "DEFAULT_STAT_FUNCS",
     "save_fluorescent_max_projections",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name in {"plot_folder_projection_grid", "save_per_file_overview"}:
+        module = import_module(".plotting", __name__)
+        return getattr(module, name)
+    if name == "export_directory":
+        module = import_module(".export", __name__)
+        return getattr(module, name)
+    if name in {"compute_statistics", "DEFAULT_STAT_FUNCS"}:
+        module = import_module(".stats", __name__)
+        return getattr(module, name)
+    if name == "save_fluorescent_max_projections":
+        module = import_module(".quicklook", __name__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

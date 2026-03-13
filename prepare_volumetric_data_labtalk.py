@@ -54,7 +54,7 @@ class VolumetricDataLabtalkPreparer:
         resolution_level: int = 0,
         time_point: int = 0,
         background_subtract_sigma: float = 12.0,
-        smoothing_sigma: float = 0.6,
+        median_filter_size: int = 3,
         scale_low_percentile: float = 1.0,
         scale_high_percentile: float = 99.8,
         include_scale_bars: bool = True,
@@ -67,7 +67,7 @@ class VolumetricDataLabtalkPreparer:
         self.resolution_level = resolution_level
         self.time_point = time_point
         self.background_subtract_sigma = max(0.0, background_subtract_sigma)
-        self.smoothing_sigma = max(0.0, smoothing_sigma)
+        self.median_filter_size = max(0, int(median_filter_size))
         self.scale_low_percentile = scale_low_percentile
         self.scale_high_percentile = scale_high_percentile
         self.include_scale_bars = include_scale_bars
@@ -98,7 +98,7 @@ class VolumetricDataLabtalkPreparer:
         print(
             "[info] Preprocessing: "
             f"background sigma={self.background_subtract_sigma:.2f}, "
-            f"smoothing sigma={self.smoothing_sigma:.2f}"
+            f"median filter size={self.median_filter_size}"
         )
         print(
             "[info] Display scaling percentiles: "
@@ -246,7 +246,7 @@ class VolumetricDataLabtalkPreparer:
         return np.round(norm * 255.0).astype(np.uint8), (vmin, vmax)
 
     def _preprocess_projection(self, array: np.ndarray, *, channel_label: str) -> np.ndarray:
-        from scipy.ndimage import gaussian_filter  # type: ignore
+        from scipy.ndimage import gaussian_filter, median_filter  # type: ignore
 
         data = array.astype(np.float32, copy=False)
         processed = np.array(data, copy=True)
@@ -257,8 +257,8 @@ class VolumetricDataLabtalkPreparer:
             background = gaussian_filter(processed, sigma=self.background_subtract_sigma)
             processed = np.clip(processed - background, 0.0, None)
 
-        if self.smoothing_sigma > 0:
-            processed = gaussian_filter(processed, sigma=self.smoothing_sigma)
+        if self.median_filter_size >= 3:
+            processed = median_filter(processed, size=self.median_filter_size)
 
         print(
             "[info] Preprocessed "
@@ -495,10 +495,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Gaussian sigma used to estimate and subtract background before scaling (default: %(default)s).",
     )
     parser.add_argument(
-        "--smoothing-sigma",
-        type=float,
-        default=0.6,
-        help="Small Gaussian smoothing sigma applied after background subtraction (default: %(default)s).",
+        "--median-filter-size",
+        type=int,
+        default=3,
+        help="Median filter window size applied after background subtraction to suppress grainy pixels (default: %(default)s). Use 0 or 1 to disable.",
     )
     parser.add_argument(
         "--scale-low-percentile",
@@ -536,7 +536,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         resolution_level=args.resolution_level,
         time_point=args.time_point,
         background_subtract_sigma=args.background_subtract_sigma,
-        smoothing_sigma=args.smoothing_sigma,
+        median_filter_size=args.median_filter_size,
         scale_low_percentile=args.scale_low_percentile,
         scale_high_percentile=args.scale_high_percentile,
         include_scale_bars=not args.no_scale_bars,
