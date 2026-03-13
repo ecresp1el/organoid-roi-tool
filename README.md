@@ -762,10 +762,9 @@ python prepare_volumetric_data_labtalk.py /path/to/ims \
 
 Outputs:
 - `*_red_green_merged.tif` per input file
+- `*.metadata.json` per output TIFF with source path, selected channel indices, display ranges, and a pointer to the run-level metadata
 - `prepared_manifest.csv` with source/output paths, selected red/green channel indexes, image dimensions, and display intensity ranges used for red/green scaling
 - `preparation_run_metadata.json` with the exact CLI arguments, script path, working directory, discovered `.ims` files, and all processing/display settings used for that run
-
-Each output TIFF also stores a JSON `ImageDescription` block containing the source path, selected channel indices, display ranges, and a pointer back to `preparation_run_metadata.json`.
 
 Disable scale bars if you only want the raw 1x3 strip:
 

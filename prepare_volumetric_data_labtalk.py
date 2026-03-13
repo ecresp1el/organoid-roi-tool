@@ -34,6 +34,7 @@ from imaris_tools.projections import compute_max_projections
 class PreparedVolumeRecord:
     source_path: Path
     output_path: Path
+    output_metadata_path: Path
     red_channel_index: int
     green_channel_index: int
     height_px: int
@@ -163,26 +164,29 @@ class VolumetricDataLabtalkPreparer:
             if self.include_scale_bars:
                 strip = self._append_scale_bars(strip, red_scale, green_scale)
 
+            output_metadata_path = output_path.with_suffix(".metadata.json")
             tiff.imwrite(
                 output_path,
                 strip,
                 photometric="rgb",
-                description=json.dumps(
-                    self._build_image_metadata(
-                        ims_path=ims_path,
-                        output_path=output_path,
-                        run_metadata_path=run_metadata_path,
-                        red_idx=red_idx,
-                        green_idx=green_idx,
-                        red_scale=red_scale,
-                        green_scale=green_scale,
-                    ),
-                    indent=2,
+            )
+            self._write_run_metadata(
+                output_metadata_path,
+                self._build_image_metadata(
+                    ims_path=ims_path,
+                    output_path=output_path,
+                    output_metadata_path=output_metadata_path,
+                    run_metadata_path=run_metadata_path,
+                    red_idx=red_idx,
+                    green_idx=green_idx,
+                    red_scale=red_scale,
+                    green_scale=green_scale,
                 ),
             )
             record = PreparedVolumeRecord(
                 source_path=ims_path,
                 output_path=output_path,
+                output_metadata_path=output_metadata_path,
                 red_channel_index=red_idx,
                 green_channel_index=green_idx,
                 height_px=int(strip.shape[0]),
@@ -246,6 +250,7 @@ class VolumetricDataLabtalkPreparer:
         *,
         ims_path: Path,
         output_path: Path,
+        output_metadata_path: Path,
         run_metadata_path: Path,
         red_idx: int,
         green_idx: int,
@@ -255,6 +260,7 @@ class VolumetricDataLabtalkPreparer:
         return {
             "source_path": str(ims_path),
             "output_path": str(output_path),
+            "output_metadata_path": str(output_metadata_path),
             "run_metadata_path": str(run_metadata_path),
             "red_channel_index": red_idx,
             "green_channel_index": green_idx,
@@ -620,6 +626,7 @@ class VolumetricDataLabtalkPreparer:
                 fieldnames=[
                     "source_path",
                     "output_path",
+                    "output_metadata_path",
                     "run_metadata_path",
                     "red_channel_index",
                     "green_channel_index",
@@ -651,6 +658,7 @@ class VolumetricDataLabtalkPreparer:
                     {
                         "source_path": str(record.source_path),
                         "output_path": str(record.output_path),
+                        "output_metadata_path": str(record.output_metadata_path),
                         "run_metadata_path": str(run_metadata_path),
                         "red_channel_index": record.red_channel_index,
                         "green_channel_index": record.green_channel_index,
