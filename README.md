@@ -969,6 +969,14 @@ To change the z window:
 --z-start 120 --z-end 540
 ```
 
+To view the same 1x4 strip inside a square ROI without masking or cutout logic, add:
+
+```bash
+--roi-center-x 1024 --roi-center-y 960 --roi-size 512
+```
+
+That crops all 4 panels to the same square display window and records the requested and effective ROI bounds in the metadata sidecar and manifest.
+
 ## Render brightfield/confocal z-stack movies as 1x4 MP4 panels
 
 Use `prepare_volumetric_movie_brightfield_confocal.py` to render synchronized z-stack movies with 4 panels:
@@ -996,6 +1004,22 @@ python prepare_volumetric_movie_brightfield_confocal.py "/path/to/file.ims" \
   --scale-high-percentile 99.5 \
   --fps 12
 ```
+
+You can apply the same square ROI view to movies:
+
+```bash
+python prepare_volumetric_movie_brightfield_confocal.py "/path/to/file.ims" \
+  --output-dir ~/Desktop/volumetric_brightfield_confocal_movies \
+  --overwrite \
+  --z-start 90 \
+  --z-end 672 \
+  --roi-center-x 1024 \
+  --roi-center-y 960 \
+  --roi-size 512 \
+  --fps 12
+```
+
+This keeps the same 1x4 panel layout, but every frame is rendered from the same square ROI window instead of the full field of view.
 
 Movie output keeps the same provenance pattern:
 - one MP4 per input file

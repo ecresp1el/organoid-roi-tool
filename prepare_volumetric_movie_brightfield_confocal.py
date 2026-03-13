@@ -53,6 +53,14 @@ class PreparedMovieRecord:
     z_end_requested: int
     z_start_effective: int
     z_end_effective: int
+    roi_enabled: bool
+    roi_center_x_requested: int
+    roi_center_y_requested: int
+    roi_size_requested: int
+    roi_x_start: int
+    roi_x_end: int
+    roi_y_start: int
+    roi_y_end: int
     frame_count: int
     fps: float
     brightfield_min_value: float
@@ -92,6 +100,9 @@ class BrightfieldConfocalMoviePreparer:
         progress_interval: int = 25,
         scale_estimation_z_step: int = 5,
         scale_estimation_xy_step: int = 16,
+        roi_center_x: Optional[int] = None,
+        roi_center_y: Optional[int] = None,
+        roi_size: Optional[int] = None,
         cli_args: Optional[list[str]] = None,
     ) -> None:
         self.input_path = input_path.expanduser().resolve()
@@ -119,6 +130,14 @@ class BrightfieldConfocalMoviePreparer:
         self.progress_interval = max(1, int(progress_interval))
         self.scale_estimation_z_step = max(1, int(scale_estimation_z_step))
         self.scale_estimation_xy_step = max(1, int(scale_estimation_xy_step))
+        self.roi_center_x = None if roi_center_x is None else int(roi_center_x)
+        self.roi_center_y = None if roi_center_y is None else int(roi_center_y)
+        self.roi_size = None if roi_size is None else int(roi_size)
+        self.roi_enabled = any(value is not None for value in (self.roi_center_x, self.roi_center_y, self.roi_size))
+        if self.roi_enabled and any(value is None for value in (self.roi_center_x, self.roi_center_y, self.roi_size)):
+            raise ValueError("Square ROI view requires --roi-center-x, --roi-center-y, and --roi-size together.")
+        if self.roi_size is not None and self.roi_size <= 0:
+            raise ValueError("--roi-size must be a positive integer.")
         self.cli_args = list(cli_args or [])
 
     def discover_files(self) -> list[Path]:
@@ -172,12 +191,6 @@ class BrightfieldConfocalMoviePreparer:
                 f"red={channel_map['red'][0]} ({channel_map['red'][1]})"
             )
 
-            output_path = self.output_dir / f"{ims_path.stem}_zmovie.mp4"
-            output_metadata_path = output_path.with_suffix(".metadata.json")
-            if output_path.exists() and not self.overwrite:
-                print(f"[warn] Output exists, skipping (use --overwrite to replace): {output_path}")
-                continue
-
             with h5py.File(ims_path, "r") as handle:
                 print("[step] Discovering channel datasets in file")
                 datasets = dict(
@@ -199,6 +212,8 @@ class BrightfieldConfocalMoviePreparer:
                     f"[step] Effective movie z window={z_window['z_start']}..{z_window['z_end']} "
                     f"({z_window['z_count']} slices)"
                 )
+                roi_window = self._resolve_roi_window(tuple(int(dim) for dim in bf_dataset.shape[-2:]))
+                self._print_roi_summary(roi_window)
 
                 print("[step] Estimating display ranges across z window")
                 brightfield_scale = self._estimate_display_range(
@@ -206,23 +221,32 @@ class BrightfieldConfocalMoviePreparer:
                     z_window=z_window,
                     channel_label=f"brightfield ch{channel_map['brightfield'][0]}",
                     preprocess=False,
+                    roi_window=roi_window,
                 )
                 green_scale = self._estimate_display_range(
                     green_dataset,
                     z_window=z_window,
                     channel_label=f"green ch{channel_map['green'][0]}",
                     preprocess=True,
+                    roi_window=roi_window,
                 )
                 red_scale = self._estimate_display_range(
                     red_dataset,
                     z_window=z_window,
                     channel_label=f"red ch{channel_map['red'][0]}",
                     preprocess=True,
+                    roi_window=roi_window,
                 )
 
                 self._print_scale_summary("brightfield", brightfield_scale)
                 self._print_scale_summary("green", green_scale)
                 self._print_scale_summary("red", red_scale)
+
+                output_path = self.output_dir / self._build_output_name(ims_path, z_window, roi_window)
+                output_metadata_path = output_path.with_suffix(".metadata.json")
+                if output_path.exists() and not self.overwrite:
+                    print(f"[warn] Output exists, skipping (use --overwrite to replace): {output_path}")
+                    continue
 
                 writer = self._open_mp4_writer(output_path)
                 try:
@@ -232,9 +256,9 @@ class BrightfieldConfocalMoviePreparer:
                                 f"[progress] rendering frame {frame_offset}/{z_window['z_count']} "
                                 f"(z={z_index})"
                             )
-                        brightfield = np.asarray(bf_dataset[z_index, ...], dtype=np.float32)
-                        green = np.asarray(green_dataset[z_index, ...], dtype=np.float32)
-                        red = np.asarray(red_dataset[z_index, ...], dtype=np.float32)
+                        brightfield = self._crop_to_roi(np.asarray(bf_dataset[z_index, ...], dtype=np.float32), roi_window)
+                        green = self._crop_to_roi(np.asarray(green_dataset[z_index, ...], dtype=np.float32), roi_window)
+                        red = self._crop_to_roi(np.asarray(red_dataset[z_index, ...], dtype=np.float32), roi_window)
 
                         green = self._preprocess_fluorescence_frame(green, channel_label="green frame")
                         red = self._preprocess_fluorescence_frame(red, channel_label="red frame")
@@ -262,6 +286,7 @@ class BrightfieldConfocalMoviePreparer:
                     run_metadata_path=run_metadata_path,
                     channel_map=channel_map,
                     z_window=z_window,
+                    roi_window=roi_window,
                     brightfield_scale=brightfield_scale,
                     green_scale=green_scale,
                     red_scale=red_scale,
@@ -279,6 +304,14 @@ class BrightfieldConfocalMoviePreparer:
                     z_end_requested=self.z_end,
                     z_start_effective=z_window["z_start"],
                     z_end_effective=z_window["z_end"],
+                    roi_enabled=bool(roi_window["enabled"]),
+                    roi_center_x_requested=int(roi_window["requested_center_x"]),
+                    roi_center_y_requested=int(roi_window["requested_center_y"]),
+                    roi_size_requested=int(roi_window["requested_size"]),
+                    roi_x_start=int(roi_window["x_start"]),
+                    roi_x_end=int(roi_window["x_end"]),
+                    roi_y_start=int(roi_window["y_start"]),
+                    roi_y_end=int(roi_window["y_end"]),
                     frame_count=z_window["z_count"],
                     fps=self.fps,
                     brightfield_min_value=brightfield_scale[0],
@@ -325,6 +358,13 @@ class BrightfieldConfocalMoviePreparer:
         )
         print(f"[info] Invert display: {self.invert_display}")
         print(f"[info] Include green/red scale bars: {self.include_scale_bars}")
+        if self.roi_enabled:
+            print(
+                "[info] Square ROI view: "
+                f"center=({self.roi_center_x}, {self.roi_center_y}), size={self.roi_size}"
+            )
+        else:
+            print("[info] Square ROI view: disabled (full field of view)")
         print(f"[info] Movie FPS: {self.fps}")
         print(f"[info] Render progress interval: every {self.progress_interval} frames")
         print(
@@ -359,6 +399,9 @@ class BrightfieldConfocalMoviePreparer:
             "progress_interval": self.progress_interval,
             "scale_estimation_z_step": self.scale_estimation_z_step,
             "scale_estimation_xy_step": self.scale_estimation_xy_step,
+            "roi_center_x": self.roi_center_x,
+            "roi_center_y": self.roi_center_y,
+            "roi_size": self.roi_size,
         }
 
     def _build_run_metadata(self, ims_files: list[Path]) -> dict[str, object]:
@@ -387,6 +430,7 @@ class BrightfieldConfocalMoviePreparer:
         run_metadata_path: Path,
         channel_map: dict[str, tuple[int, str]],
         z_window: dict[str, int],
+        roi_window: dict[str, int | bool],
         brightfield_scale: tuple[float, float],
         green_scale: tuple[float, float],
         red_scale: tuple[float, float],
@@ -414,6 +458,7 @@ class BrightfieldConfocalMoviePreparer:
                 },
             },
             "z_window": z_window,
+            "roi_window": roi_window,
             "settings": self._settings_dict(),
         }
 
@@ -455,6 +500,7 @@ class BrightfieldConfocalMoviePreparer:
         z_window: dict[str, int],
         channel_label: str,
         preprocess: bool,
+        roi_window: dict[str, int | bool],
     ) -> tuple[float, float]:
         print(
             f"[step] Estimating display range for {channel_label} "
@@ -469,6 +515,7 @@ class BrightfieldConfocalMoviePreparer:
         global_max = float("-inf")
         for sample_idx, z_index in enumerate(z_indices, start=1):
             frame = np.asarray(dataset[z_index, ...], dtype=np.float32)
+            frame = self._crop_to_roi(frame, roi_window)
             if preprocess:
                 frame = self._preprocess_fluorescence_frame(frame, channel_label=f"{channel_label} scale-estimation")
             global_min = min(global_min, float(np.min(frame)))
@@ -517,6 +564,72 @@ class BrightfieldConfocalMoviePreparer:
                 border=self.preserve_edge_pixels,
             )
         return processed
+
+    @staticmethod
+    def _crop_to_roi(array: np.ndarray, roi_window: dict[str, int | bool]) -> np.ndarray:
+        if not bool(roi_window["enabled"]):
+            return array
+        return array[int(roi_window["y_start"]) : int(roi_window["y_end"]), int(roi_window["x_start"]) : int(roi_window["x_end"])]
+
+    def _resolve_roi_window(self, image_shape: tuple[int, int]) -> dict[str, int | bool]:
+        height, width = int(image_shape[0]), int(image_shape[1])
+        if not self.roi_enabled:
+            return {
+                "enabled": False,
+                "requested_center_x": -1,
+                "requested_center_y": -1,
+                "requested_size": 0,
+                "x_start": 0,
+                "x_end": width,
+                "y_start": 0,
+                "y_end": height,
+                "width": width,
+                "height": height,
+            }
+
+        roi_size = min(int(self.roi_size), width, height)
+        center_x = min(max(int(self.roi_center_x), 0), width - 1)
+        center_y = min(max(int(self.roi_center_y), 0), height - 1)
+        x_start = center_x - (roi_size // 2)
+        y_start = center_y - (roi_size // 2)
+        x_start = min(max(x_start, 0), width - roi_size)
+        y_start = min(max(y_start, 0), height - roi_size)
+        x_end = x_start + roi_size
+        y_end = y_start + roi_size
+        return {
+            "enabled": True,
+            "requested_center_x": int(self.roi_center_x),
+            "requested_center_y": int(self.roi_center_y),
+            "requested_size": int(self.roi_size),
+            "x_start": x_start,
+            "x_end": x_end,
+            "y_start": y_start,
+            "y_end": y_end,
+            "width": roi_size,
+            "height": roi_size,
+        }
+
+    @staticmethod
+    def _print_roi_summary(roi_window: dict[str, int | bool]) -> None:
+        if not bool(roi_window["enabled"]):
+            print("[step] Square ROI view disabled: using the full field of view")
+            return
+        print(
+            "[step] Applying square ROI view: "
+            f"x={roi_window['x_start']}:{roi_window['x_end']}, "
+            f"y={roi_window['y_start']}:{roi_window['y_end']} "
+            f"(size={roi_window['width']} px)"
+        )
+
+    def _build_output_name(self, ims_path: Path, z_window: dict[str, int], roi_window: dict[str, int | bool]) -> str:
+        roi_suffix = ""
+        if bool(roi_window["enabled"]):
+            roi_suffix = (
+                f"_roi_x{int(roi_window['requested_center_x']):04d}"
+                f"_y{int(roi_window['requested_center_y']):04d}"
+                f"_s{int(roi_window['requested_size']):04d}"
+            )
+        return f"{ims_path.stem}_zmovie_z{z_window['z_start']:04d}_{z_window['z_end']:04d}{roi_suffix}.mp4"
 
     @staticmethod
     def _restore_edge_pixels(
@@ -704,6 +817,14 @@ class BrightfieldConfocalMoviePreparer:
                     "z_end_requested",
                     "z_start_effective",
                     "z_end_effective",
+                    "roi_enabled",
+                    "roi_center_x_requested",
+                    "roi_center_y_requested",
+                    "roi_size_requested",
+                    "roi_x_start",
+                    "roi_x_end",
+                    "roi_y_start",
+                    "roi_y_end",
                     "frame_count",
                     "fps",
                     "brightfield_min_value",
@@ -746,6 +867,14 @@ class BrightfieldConfocalMoviePreparer:
                         "z_end_requested": record.z_end_requested,
                         "z_start_effective": record.z_start_effective,
                         "z_end_effective": record.z_end_effective,
+                        "roi_enabled": record.roi_enabled,
+                        "roi_center_x_requested": record.roi_center_x_requested,
+                        "roi_center_y_requested": record.roi_center_y_requested,
+                        "roi_size_requested": record.roi_size_requested,
+                        "roi_x_start": record.roi_x_start,
+                        "roi_x_end": record.roi_x_end,
+                        "roi_y_start": record.roi_y_start,
+                        "roi_y_end": record.roi_y_end,
                         "frame_count": record.frame_count,
                         "fps": f"{record.fps:.6g}",
                         "brightfield_min_value": f"{record.brightfield_min_value:.6g}",
@@ -811,6 +940,24 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--fps", type=float, default=12.0)
     parser.add_argument("--progress-interval", type=int, default=25)
     parser.add_argument(
+        "--roi-center-x",
+        type=int,
+        default=None,
+        help="X coordinate of the square ROI center in pixels. Use with --roi-center-y and --roi-size.",
+    )
+    parser.add_argument(
+        "--roi-center-y",
+        type=int,
+        default=None,
+        help="Y coordinate of the square ROI center in pixels. Use with --roi-center-x and --roi-size.",
+    )
+    parser.add_argument(
+        "--roi-size",
+        type=int,
+        default=None,
+        help="Square ROI width/height in pixels. This crops the displayed field of view without masking.",
+    )
+    parser.add_argument(
         "--scale-estimation-z-step",
         type=int,
         default=5,
@@ -853,6 +1000,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         progress_interval=args.progress_interval,
         scale_estimation_z_step=args.scale_estimation_z_step,
         scale_estimation_xy_step=args.scale_estimation_xy_step,
+        roi_center_x=args.roi_center_x,
+        roi_center_y=args.roi_center_y,
+        roi_size=args.roi_size,
         cli_args=(argv if argv is not None else sys.argv[1:]),
     )
     preparer.prepare_all()

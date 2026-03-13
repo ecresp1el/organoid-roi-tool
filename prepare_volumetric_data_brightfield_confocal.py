@@ -53,6 +53,14 @@ class PreparedBrightfieldConfocalRecord:
     z_end_requested: int
     z_start_effective: int
     z_end_effective: int
+    roi_enabled: bool
+    roi_center_x_requested: int
+    roi_center_y_requested: int
+    roi_size_requested: int
+    roi_x_start: int
+    roi_x_end: int
+    roi_y_start: int
+    roi_y_end: int
     height_px: int
     width_px: int
     brightfield_min_value: float
@@ -91,6 +99,9 @@ class BrightfieldConfocalVolumePreparer:
         include_scale_bars: bool = True,
         scale_bar_width: int = 14,
         progress_interval: int = 25,
+        roi_center_x: Optional[int] = None,
+        roi_center_y: Optional[int] = None,
+        roi_size: Optional[int] = None,
         cli_args: Optional[list[str]] = None,
     ) -> None:
         self.input_path = input_path.expanduser().resolve()
@@ -115,6 +126,14 @@ class BrightfieldConfocalVolumePreparer:
         self.include_scale_bars = include_scale_bars
         self.scale_bar_width = max(2, int(scale_bar_width))
         self.progress_interval = max(1, int(progress_interval))
+        self.roi_center_x = None if roi_center_x is None else int(roi_center_x)
+        self.roi_center_y = None if roi_center_y is None else int(roi_center_y)
+        self.roi_size = None if roi_size is None else int(roi_size)
+        self.roi_enabled = any(value is not None for value in (self.roi_center_x, self.roi_center_y, self.roi_size))
+        if self.roi_enabled and any(value is None for value in (self.roi_center_x, self.roi_center_y, self.roi_size)):
+            raise ValueError("Square ROI view requires --roi-center-x, --roi-center-y, and --roi-size together.")
+        if self.roi_size is not None and self.roi_size <= 0:
+            raise ValueError("--roi-size must be a positive integer.")
         self.cli_args = list(cli_args or [])
 
     def discover_files(self) -> list[Path]:
@@ -169,6 +188,13 @@ class BrightfieldConfocalVolumePreparer:
             f"percentiles={self.scale_low_percentile:.2f}->{self.scale_high_percentile:.2f}"
         )
         print(f"[info] Include green/red scale bars: {self.include_scale_bars}")
+        if self.roi_enabled:
+            print(
+                "[info] Square ROI view: "
+                f"center=({self.roi_center_x}, {self.roi_center_y}), size={self.roi_size}"
+            )
+        else:
+            print("[info] Square ROI view: disabled (full field of view)")
         print(f"[info] Progress interval: every {self.progress_interval} z slices")
         print(f"[info] Run metadata JSON: {run_metadata_path}")
         print("[info] ================================================")
@@ -249,10 +275,13 @@ class BrightfieldConfocalVolumePreparer:
                     z_window=red_window,
                 )
 
-            output_path = self.output_dir / (
-                f"{ims_path.stem}_brightfield_green_red_merged_"
-                f"z{green_window['z_start']:04d}_{green_window['z_end']:04d}.tif"
-            )
+            roi_window = self._resolve_roi_window(brightfield_projection.shape)
+            self._print_roi_summary(roi_window)
+            brightfield_projection = self._crop_to_roi(brightfield_projection, roi_window)
+            green_projection = self._crop_to_roi(green_projection, roi_window)
+            red_projection = self._crop_to_roi(red_projection, roi_window)
+
+            output_path = self.output_dir / self._build_output_name(ims_path, green_window, roi_window)
             if output_path.exists() and not self.overwrite:
                 print(f"[warn] Output exists, skipping (use --overwrite to replace): {output_path}")
                 continue
@@ -298,6 +327,7 @@ class BrightfieldConfocalVolumePreparer:
                     green_scale=green_scale,
                     red_scale=red_scale,
                     z_window=green_window,
+                    roi_window=roi_window,
                 ),
             )
 
@@ -312,6 +342,14 @@ class BrightfieldConfocalVolumePreparer:
                 z_end_requested=self.z_end,
                 z_start_effective=green_window["z_start"],
                 z_end_effective=green_window["z_end"],
+                roi_enabled=bool(roi_window["enabled"]),
+                roi_center_x_requested=int(roi_window["requested_center_x"]),
+                roi_center_y_requested=int(roi_window["requested_center_y"]),
+                roi_size_requested=int(roi_window["requested_size"]),
+                roi_x_start=int(roi_window["x_start"]),
+                roi_x_end=int(roi_window["x_end"]),
+                roi_y_start=int(roi_window["y_start"]),
+                roi_y_end=int(roi_window["y_end"]),
                 height_px=int(strip.shape[0]),
                 width_px=int(strip.shape[1]),
                 brightfield_min_value=brightfield_scale[0],
@@ -359,6 +397,9 @@ class BrightfieldConfocalVolumePreparer:
             "include_scale_bars": self.include_scale_bars,
             "scale_bar_width": self.scale_bar_width,
             "progress_interval": self.progress_interval,
+            "roi_center_x": self.roi_center_x,
+            "roi_center_y": self.roi_center_y,
+            "roi_size": self.roi_size,
         }
 
     def _build_run_metadata(self, *, ims_files: list[Path]) -> dict[str, object]:
@@ -390,6 +431,7 @@ class BrightfieldConfocalVolumePreparer:
         green_scale: tuple[float, float],
         red_scale: tuple[float, float],
         z_window: dict[str, int],
+        roi_window: dict[str, int | bool],
     ) -> dict[str, object]:
         return {
             "source_path": str(ims_path),
@@ -414,6 +456,7 @@ class BrightfieldConfocalVolumePreparer:
                 },
             },
             "z_window": z_window,
+            "roi_window": roi_window,
             "settings": self._settings_dict(),
         }
 
@@ -674,6 +717,75 @@ class BrightfieldConfocalVolumePreparer:
             "max_delta_vs_first": max_delta,
         }
 
+    @staticmethod
+    def _crop_to_roi(array: np.ndarray, roi_window: dict[str, int | bool]) -> np.ndarray:
+        if not bool(roi_window["enabled"]):
+            return array
+        return array[int(roi_window["y_start"]) : int(roi_window["y_end"]), int(roi_window["x_start"]) : int(roi_window["x_end"])]
+
+    def _resolve_roi_window(self, image_shape: tuple[int, int]) -> dict[str, int | bool]:
+        height, width = int(image_shape[0]), int(image_shape[1])
+        if not self.roi_enabled:
+            return {
+                "enabled": False,
+                "requested_center_x": -1,
+                "requested_center_y": -1,
+                "requested_size": 0,
+                "x_start": 0,
+                "x_end": width,
+                "y_start": 0,
+                "y_end": height,
+                "width": width,
+                "height": height,
+            }
+
+        roi_size = min(int(self.roi_size), width, height)
+        center_x = min(max(int(self.roi_center_x), 0), width - 1)
+        center_y = min(max(int(self.roi_center_y), 0), height - 1)
+        x_start = center_x - (roi_size // 2)
+        y_start = center_y - (roi_size // 2)
+        x_start = min(max(x_start, 0), width - roi_size)
+        y_start = min(max(y_start, 0), height - roi_size)
+        x_end = x_start + roi_size
+        y_end = y_start + roi_size
+        return {
+            "enabled": True,
+            "requested_center_x": int(self.roi_center_x),
+            "requested_center_y": int(self.roi_center_y),
+            "requested_size": int(self.roi_size),
+            "x_start": x_start,
+            "x_end": x_end,
+            "y_start": y_start,
+            "y_end": y_end,
+            "width": roi_size,
+            "height": roi_size,
+        }
+
+    @staticmethod
+    def _print_roi_summary(roi_window: dict[str, int | bool]) -> None:
+        if not bool(roi_window["enabled"]):
+            print("[step] Square ROI view disabled: using the full field of view")
+            return
+        print(
+            "[step] Applying square ROI view: "
+            f"x={roi_window['x_start']}:{roi_window['x_end']}, "
+            f"y={roi_window['y_start']}:{roi_window['y_end']} "
+            f"(size={roi_window['width']} px)"
+        )
+
+    def _build_output_name(self, ims_path: Path, z_window: dict[str, int], roi_window: dict[str, int | bool]) -> str:
+        roi_suffix = ""
+        if bool(roi_window["enabled"]):
+            roi_suffix = (
+                f"_roi_x{int(roi_window['requested_center_x']):04d}"
+                f"_y{int(roi_window['requested_center_y']):04d}"
+                f"_s{int(roi_window['requested_size']):04d}"
+            )
+        return (
+            f"{ims_path.stem}_brightfield_green_red_merged_"
+            f"z{z_window['z_start']:04d}_{z_window['z_end']:04d}{roi_suffix}.tif"
+        )
+
     def _append_scale_bars(
         self,
         strip: np.ndarray,
@@ -803,6 +915,14 @@ class BrightfieldConfocalVolumePreparer:
                     "z_end_requested",
                     "z_start_effective",
                     "z_end_effective",
+                    "roi_enabled",
+                    "roi_center_x_requested",
+                    "roi_center_y_requested",
+                    "roi_size_requested",
+                    "roi_x_start",
+                    "roi_x_end",
+                    "roi_y_start",
+                    "roi_y_end",
                     "height_px",
                     "width_px",
                     "brightfield_min_value",
@@ -842,6 +962,14 @@ class BrightfieldConfocalVolumePreparer:
                         "z_end_requested": record.z_end_requested,
                         "z_start_effective": record.z_start_effective,
                         "z_end_effective": record.z_end_effective,
+                        "roi_enabled": record.roi_enabled,
+                        "roi_center_x_requested": record.roi_center_x_requested,
+                        "roi_center_y_requested": record.roi_center_y_requested,
+                        "roi_size_requested": record.roi_size_requested,
+                        "roi_x_start": record.roi_x_start,
+                        "roi_x_end": record.roi_x_end,
+                        "roi_y_start": record.roi_y_start,
+                        "roi_y_end": record.roi_y_end,
                         "height_px": record.height_px,
                         "width_px": record.width_px,
                         "brightfield_min_value": f"{record.brightfield_min_value:.6g}",
@@ -977,6 +1105,24 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=25,
         help="Print z-projection progress every N slices (default: %(default)s).",
     )
+    parser.add_argument(
+        "--roi-center-x",
+        type=int,
+        default=None,
+        help="X coordinate of the square ROI center in pixels. Use with --roi-center-y and --roi-size.",
+    )
+    parser.add_argument(
+        "--roi-center-y",
+        type=int,
+        default=None,
+        help="Y coordinate of the square ROI center in pixels. Use with --roi-center-x and --roi-size.",
+    )
+    parser.add_argument(
+        "--roi-size",
+        type=int,
+        default=None,
+        help="Square ROI width/height in pixels. This crops the displayed field of view without masking.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1005,6 +1151,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         include_scale_bars=not args.no_scale_bars,
         scale_bar_width=args.scale_bar_width,
         progress_interval=args.progress_interval,
+        roi_center_x=args.roi_center_x,
+        roi_center_y=args.roi_center_y,
+        roi_size=args.roi_size,
         cli_args=(argv if argv is not None else sys.argv[1:]),
     )
     preparer.prepare_all()
