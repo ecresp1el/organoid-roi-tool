@@ -738,7 +738,19 @@ export TIMES="00:00 06:00 12:00"; export DAYS="01 02"; ./RUN_MakeSampleData_mac_
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels:
+=======
+Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
+>>>>>>> theirs
+=======
+Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
+>>>>>>> theirs
+=======
+Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
+>>>>>>> theirs
 =======
 Use `prepare_volumetric_data_labtalk.py` to generate one TIFF strip per `.ims` file with 3 panels (plus per-panel intensity scale bars by default):
 >>>>>>> theirs
@@ -770,6 +782,9 @@ Outputs:
 - `*_red_green_merged.tif` per input file
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 - `prepared_manifest.csv` with source path, output path, selected red/green channel indexes, and image dimensions
 <<<<<<< ours
 <<<<<<< ours
@@ -783,6 +798,12 @@ Outputs:
 =======
 >>>>>>> theirs
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 - `prepared_manifest.csv` with source/output paths, selected red/green channel indexes, image dimensions, and display intensity ranges used for red/green scaling
@@ -802,6 +823,15 @@ Disable scale bars if you only want the raw 1x3 strip:
 python prepare_volumetric_data_labtalk.py /path/to/ims --no-scale-bars
 ```
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -860,6 +890,15 @@ conda install -n organoid_roi_incucyte_imaging h5py numpy tifffile
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

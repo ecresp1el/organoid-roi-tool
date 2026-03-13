@@ -9,6 +9,18 @@ computes max-intensity projections, and exports a 1x3 RGB strip per file:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+By default, each panel includes a per-panel intensity scale bar.
+>>>>>>> theirs
+=======
+By default, each panel includes a per-panel intensity scale bar.
+>>>>>>> theirs
+=======
+By default, each panel includes a per-panel intensity scale bar.
+>>>>>>> theirs
 =======
 By default, each panel includes a per-panel intensity scale bar.
 >>>>>>> theirs
@@ -42,7 +54,16 @@ class PreparedVolumeRecord:
     width_px: int
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     red_min_value: float
@@ -50,6 +71,15 @@ class PreparedVolumeRecord:
     green_min_value: float
     green_max_value: float
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -69,7 +99,16 @@ class VolumetricDataLabtalkPreparer:
         time_point: int = 0,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
         scale_low_percentile: float = 1.0,
@@ -77,6 +116,15 @@ class VolumetricDataLabtalkPreparer:
         include_scale_bars: bool = True,
         scale_bar_width: int = 14,
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -89,7 +137,16 @@ class VolumetricDataLabtalkPreparer:
         self.time_point = time_point
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
         self.scale_low_percentile = scale_low_percentile
@@ -97,6 +154,15 @@ class VolumetricDataLabtalkPreparer:
         self.include_scale_bars = include_scale_bars
         self.scale_bar_width = max(2, scale_bar_width)
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -119,8 +185,17 @@ class VolumetricDataLabtalkPreparer:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
         for ims_path in ims_files:
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
         print("[info] ================================================")
@@ -139,6 +214,15 @@ class VolumetricDataLabtalkPreparer:
         for file_index, ims_path in enumerate(ims_files, start=1):
             print(f"\n[info] Processing file {file_index}/{len(ims_files)}: {ims_path.name}")
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -149,8 +233,17 @@ class VolumetricDataLabtalkPreparer:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
             _, projections = compute_max_projections(
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
             output_path = self.output_dir / f"{ims_path.stem}_red_green_merged.tif"
@@ -160,6 +253,15 @@ class VolumetricDataLabtalkPreparer:
 
             metadata, projections = compute_max_projections(
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -170,6 +272,9 @@ class VolumetricDataLabtalkPreparer:
             red_projection = projections[red_idx]
             green_projection = projections[green_idx]
 
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
             strip = self._compose_triptych(red_projection, green_projection)
@@ -193,6 +298,12 @@ class VolumetricDataLabtalkPreparer:
             print(
                 f"[ok] {ims_path.name}: red=Channel {red_idx}, green=Channel {green_idx} -> {output_path.name}"
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
             red_channel_name = self._channel_name(metadata, red_idx)
@@ -224,6 +335,15 @@ class VolumetricDataLabtalkPreparer:
                 f"red scale=[{red_scale[0]:.3f}, {red_scale[1]:.3f}] | "
                 f"green scale=[{green_scale[0]:.3f}, {green_scale[1]:.3f}]"
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -233,7 +353,19 @@ class VolumetricDataLabtalkPreparer:
         self._write_manifest(records, manifest)
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
         print(f"[info] Wrote manifest with {len(records)} record(s): {manifest}")
+=======
+        print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
+>>>>>>> theirs
+=======
+        print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
+>>>>>>> theirs
+=======
+        print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
+>>>>>>> theirs
 =======
         print(f"\n[info] Wrote manifest with {len(records)} record(s): {manifest}")
 >>>>>>> theirs
@@ -272,7 +404,16 @@ class VolumetricDataLabtalkPreparer:
     @staticmethod
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     def _channel_name(metadata: object, channel_index: int) -> str:
@@ -284,6 +425,15 @@ class VolumetricDataLabtalkPreparer:
 
     @staticmethod
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -296,7 +446,19 @@ class VolumetricDataLabtalkPreparer:
             score = (2.0 * r) - (g + b)
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
             keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry")
+=======
+            keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry", "rfp")
+>>>>>>> theirs
+=======
+            keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry", "rfp")
+>>>>>>> theirs
+=======
+            keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry", "rfp")
+>>>>>>> theirs
 =======
             keywords = ("red", "568", "594", "cy3", "tritc", "txred", "mcherry", "rfp")
 >>>>>>> theirs
@@ -318,6 +480,9 @@ class VolumetricDataLabtalkPreparer:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
     @staticmethod
     def _normalize_u8(array: np.ndarray) -> np.ndarray:
         data = array.astype(np.float32, copy=False)
@@ -330,6 +495,12 @@ class VolumetricDataLabtalkPreparer:
         red_u8 = self._normalize_u8(red_projection)
         green_u8 = self._normalize_u8(green_projection)
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     def _normalize_u8(self, array: np.ndarray) -> tuple[np.ndarray, tuple[float, float]]:
@@ -358,6 +529,15 @@ class VolumetricDataLabtalkPreparer:
         red_u8, red_scale = self._normalize_u8(red_projection)
         green_u8, green_scale = self._normalize_u8(green_projection)
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -373,8 +553,17 @@ class VolumetricDataLabtalkPreparer:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
         return np.concatenate([red_rgb, green_rgb, merged_rgb], axis=1)
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
         strip = np.concatenate([red_rgb, green_rgb, merged_rgb], axis=1)
@@ -437,6 +626,15 @@ class VolumetricDataLabtalkPreparer:
         )
         return out
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -455,7 +653,16 @@ class VolumetricDataLabtalkPreparer:
                     "width_px",
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
                     "red_min_value",
@@ -463,6 +670,15 @@ class VolumetricDataLabtalkPreparer:
                     "green_min_value",
                     "green_max_value",
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -480,7 +696,16 @@ class VolumetricDataLabtalkPreparer:
                         "width_px": record.width_px,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
                         "red_min_value": f"{record.red_min_value:.6g}",
@@ -488,6 +713,15 @@ class VolumetricDataLabtalkPreparer:
                         "green_min_value": f"{record.green_min_value:.6g}",
                         "green_max_value": f"{record.green_max_value:.6g}",
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -510,7 +744,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--time-point", type=int, default=0)
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     parser.add_argument(
@@ -537,6 +780,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Scale bar width in pixels per panel (default: %(default)s).",
     )
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -554,7 +806,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         time_point=args.time_point,
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
         scale_low_percentile=args.scale_low_percentile,
@@ -562,6 +823,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         include_scale_bars=not args.no_scale_bars,
         scale_bar_width=args.scale_bar_width,
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

@@ -56,7 +56,22 @@ def test_prepare_all_generates_triptych_and_manifest(tmp_path: Path) -> None:
     output_image = tiff.imread(record.output_path)
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
     assert output_image.shape == (2, 6, 3)
+=======
+    # 3 panels of width 2 + (gap=4, bar=14) per panel => 6 + 54
+    assert output_image.shape == (2, 60, 3)
+>>>>>>> theirs
+=======
+    # 3 panels of width 2 + (gap=4, bar=14) per panel => 6 + 54
+    assert output_image.shape == (2, 60, 3)
+>>>>>>> theirs
+=======
+    # 3 panels of width 2 + (gap=4, bar=14) per panel => 6 + 54
+    assert output_image.shape == (2, 60, 3)
+>>>>>>> theirs
 =======
     # 3 panels of width 2 + (gap=4, bar=14) per panel => 6 + 54
     assert output_image.shape == (2, 60, 3)
@@ -72,6 +87,9 @@ def test_prepare_all_generates_triptych_and_manifest(tmp_path: Path) -> None:
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
     # green-only panel
     np.testing.assert_array_equal(output_image[:, 2:4, 0], 0)
     assert output_image[:, 2:4, 1].max() > 0
@@ -80,6 +98,12 @@ def test_prepare_all_generates_triptych_and_manifest(tmp_path: Path) -> None:
     assert output_image[:, 4:6, 0].max() > 0
     assert output_image[:, 4:6, 1].max() > 0
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     # green-only panel starts after red panel + gap + bar
@@ -92,6 +116,15 @@ def test_prepare_all_generates_triptych_and_manifest(tmp_path: Path) -> None:
     assert output_image[:, merged_start : merged_start + 2, 0].max() > 0
     assert output_image[:, merged_start : merged_start + 2, 1].max() > 0
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -102,6 +135,21 @@ def test_prepare_all_generates_triptych_and_manifest(tmp_path: Path) -> None:
     assert "sample.ims" in text
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+    assert "red_min_value" in text
+    assert "green_max_value" in text
+>>>>>>> theirs
+=======
+    assert "red_min_value" in text
+    assert "green_max_value" in text
+>>>>>>> theirs
+=======
+    assert "red_min_value" in text
+    assert "green_max_value" in text
+>>>>>>> theirs
 =======
     assert "red_min_value" in text
     assert "green_max_value" in text
@@ -127,7 +175,16 @@ def test_prepare_all_skips_without_overwrite(tmp_path: Path) -> None:
     assert len(second) == 0
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 
@@ -150,6 +207,15 @@ def test_prepare_without_scale_bars_retains_original_triptych_width(tmp_path: Pa
     output_image = tiff.imread(records[0].output_path)
     assert output_image.shape == (2, 6, 3)
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
