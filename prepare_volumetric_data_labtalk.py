@@ -19,10 +19,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
+import h5py  # type: ignore
 import numpy as np
 import tifffile as tiff  # type: ignore
 
-from imaris_tools.metadata import read_metadata
+from imaris_tools.metadata import _discover_channels, read_metadata
 from imaris_tools.projections import compute_max_projections
 
 
@@ -120,6 +121,12 @@ class VolumetricDataLabtalkPreparer:
             red_channel_name = self._channel_name(metadata, red_idx)
             green_channel_name = self._channel_name(metadata, green_idx)
             print(f"[info] Selected channels -> red: {red_idx} ({red_channel_name}), green: {green_idx} ({green_channel_name})")
+            self._print_projection_proof(
+                ims_path,
+                metadata=metadata,
+                projections=projections,
+                channel_indices=(red_idx, green_idx),
+            )
 
             strip, red_scale, green_scale = self._compose_triptych(red_projection, green_projection)
             if self.include_scale_bars:
@@ -247,6 +254,92 @@ class VolumetricDataLabtalkPreparer:
         strip = np.concatenate([red_rgb, green_rgb, merged_rgb], axis=1)
         return strip, red_scale, green_scale
 
+    def _print_projection_proof(
+        self,
+        ims_path: Path,
+        *,
+        metadata: object,
+        projections: dict[int, np.ndarray],
+        channel_indices: tuple[int, int],
+    ) -> None:
+        with h5py.File(ims_path, "r") as handle:
+            datasets = dict(
+                _discover_channels(
+                    handle,
+                    resolution_level=self.resolution_level,
+                    time_point=self.time_point,
+                )
+            )
+
+            for channel_index in channel_indices:
+                dataset = datasets.get(channel_index)
+                projection = projections.get(channel_index)
+                if dataset is None or projection is None:
+                    continue
+
+                channel_name = self._channel_name(metadata, channel_index)
+                proof = self._projection_proof_stats(dataset, projection)
+                print(
+                    "[proof] "
+                    f"Channel {channel_index} ({channel_name}) raw shape={proof['raw_shape']} "
+                    f"-> z_frames={proof['z_frames']} -> plotted projection shape={proof['projection_shape']}"
+                )
+                print(
+                    "[proof] "
+                    f"Channel {channel_index} slice maxima across z: "
+                    f"min={proof['slice_max_min']:.3f}, median={proof['slice_max_median']:.3f}, "
+                    f"max={proof['slice_max_max']:.3f}"
+                )
+                print(
+                    "[proof] "
+                    f"Channel {channel_index} z0 range=[{proof['first_slice_min']:.3f}, {proof['first_slice_max']:.3f}] "
+                    f"-> max projection range=[{proof['projection_min']:.3f}, {proof['projection_max']:.3f}]"
+                )
+                print(
+                    "[proof] "
+                    f"Channel {channel_index} pixels increased beyond z0 due to later z slices: "
+                    f"{proof['improved_pixels']}/{proof['pixel_count']} "
+                    f"({proof['improved_fraction']:.2%}), max_delta={proof['max_delta_vs_first']:.3f}"
+                )
+
+    @staticmethod
+    def _projection_proof_stats(dataset: h5py.Dataset, projection: np.ndarray) -> dict[str, object]:
+        if dataset.ndim < 3:
+            first_slice = np.asarray(dataset[()], dtype=np.float32)
+            slice_maxima = np.array([float(np.max(first_slice))], dtype=np.float32)
+            z_frames = 1
+        else:
+            z_frames = int(dataset.shape[0])
+            first_slice = np.asarray(dataset[0, ...], dtype=np.float32)
+            slice_maxima = np.empty(z_frames, dtype=np.float32)
+            for z_index in range(z_frames):
+                slice_data = np.asarray(dataset[z_index, ...], dtype=np.float32)
+                slice_maxima[z_index] = float(np.max(slice_data))
+
+        projection_f32 = projection.astype(np.float32, copy=False)
+        delta_vs_first = projection_f32 - first_slice
+        improved_mask = delta_vs_first > 0
+        improved_pixels = int(np.count_nonzero(improved_mask))
+        pixel_count = int(projection_f32.size)
+        max_delta = float(np.max(delta_vs_first[improved_mask])) if improved_pixels else 0.0
+
+        return {
+            "raw_shape": tuple(int(dim) for dim in dataset.shape),
+            "z_frames": z_frames,
+            "projection_shape": tuple(int(dim) for dim in projection.shape),
+            "slice_max_min": float(np.min(slice_maxima)),
+            "slice_max_median": float(np.median(slice_maxima)),
+            "slice_max_max": float(np.max(slice_maxima)),
+            "first_slice_min": float(np.min(first_slice)),
+            "first_slice_max": float(np.max(first_slice)),
+            "projection_min": float(np.min(projection_f32)),
+            "projection_max": float(np.max(projection_f32)),
+            "improved_pixels": improved_pixels,
+            "pixel_count": pixel_count,
+            "improved_fraction": (improved_pixels / pixel_count) if pixel_count else 0.0,
+            "max_delta_vs_first": max_delta,
+        }
+
     def _append_scale_bars(
         self,
         strip: np.ndarray,
@@ -255,10 +348,10 @@ class VolumetricDataLabtalkPreparer:
     ) -> np.ndarray:
         height, width, _ = strip.shape
         panel_width = width // 3
-        gap = 4
-        bar = self.scale_bar_width
+        gap = 8
+        bar = max(12, self.scale_bar_width)
 
-        out = np.zeros((height, width + 3 * (gap + bar), 3), dtype=np.uint8)
+        out = np.full((height, width + 3 * (gap + bar), 3), 18, dtype=np.uint8)
         cursor = 0
 
         gradient = np.linspace(255, 0, num=height, dtype=np.uint8)[:, None]
@@ -266,31 +359,43 @@ class VolumetricDataLabtalkPreparer:
         red_panel = strip[:, :panel_width, :]
         out[:, cursor : cursor + panel_width, :] = red_panel
         cursor += panel_width
-        out[:, cursor : cursor + gap, :] = 0
+        out[:, cursor : cursor + gap, :] = 32
         cursor += gap
         red_bar = np.zeros((height, bar, 3), dtype=np.uint8)
-        red_bar[..., 0] = gradient
+        red_bar[:, 1:-1, 0] = gradient
+        red_bar[:, 0, :] = 255
+        red_bar[:, -1, :] = 255
+        red_bar[:2, :, :] = 255
+        red_bar[-2:, :, :] = 255
         out[:, cursor : cursor + bar, :] = red_bar
         cursor += bar
 
         green_panel = strip[:, panel_width : (2 * panel_width), :]
         out[:, cursor : cursor + panel_width, :] = green_panel
         cursor += panel_width
-        out[:, cursor : cursor + gap, :] = 0
+        out[:, cursor : cursor + gap, :] = 32
         cursor += gap
         green_bar = np.zeros((height, bar, 3), dtype=np.uint8)
-        green_bar[..., 1] = gradient
+        green_bar[:, 1:-1, 1] = gradient
+        green_bar[:, 0, :] = 255
+        green_bar[:, -1, :] = 255
+        green_bar[:2, :, :] = 255
+        green_bar[-2:, :, :] = 255
         out[:, cursor : cursor + bar, :] = green_bar
         cursor += bar
 
         merged_panel = strip[:, (2 * panel_width) :, :]
         out[:, cursor : cursor + panel_width, :] = merged_panel
         cursor += panel_width
-        out[:, cursor : cursor + gap, :] = 0
+        out[:, cursor : cursor + gap, :] = 32
         cursor += gap
         merged_bar = np.zeros((height, bar, 3), dtype=np.uint8)
-        merged_bar[..., 0] = gradient
-        merged_bar[..., 1] = gradient
+        merged_bar[:, 1:-1, 0] = gradient
+        merged_bar[:, 1:-1, 1] = gradient
+        merged_bar[:, 0, :] = 255
+        merged_bar[:, -1, :] = 255
+        merged_bar[:2, :, :] = 255
+        merged_bar[-2:, :, :] = 255
         out[:, cursor : cursor + bar, :] = merged_bar
 
         print(
