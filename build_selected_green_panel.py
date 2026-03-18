@@ -12,6 +12,7 @@ from typing import Optional
 import numpy as np
 import tifffile as tiff  # type: ignore
 from PIL import Image, ImageDraw, ImageFont
+from scipy.ndimage import gaussian_filter, median_filter  # type: ignore
 
 
 class SelectedGreenPanelBuilder:
@@ -28,6 +29,11 @@ class SelectedGreenPanelBuilder:
         tile_width: int = 300,
         gap: int = 18,
         margin: int = 24,
+        display_min: Optional[float] = None,
+        display_max: Optional[float] = None,
+        background_subtract_sigma: float = 0.0,
+        median_filter_size: int = 0,
+        smoothing_sigma: float = 0.0,
         cli_args: Optional[list[str]] = None,
     ) -> None:
         self.row1_paths = [path.expanduser().resolve() for path in row1_paths]
@@ -40,6 +46,15 @@ class SelectedGreenPanelBuilder:
         self.tile_width = max(64, int(tile_width))
         self.gap = max(4, int(gap))
         self.margin = max(8, int(margin))
+        self.display_min = None if display_min is None else float(display_min)
+        self.display_max = None if display_max is None else float(display_max)
+        self.background_subtract_sigma = max(0.0, float(background_subtract_sigma))
+        self.median_filter_size = max(0, int(median_filter_size))
+        self.smoothing_sigma = max(0.0, float(smoothing_sigma))
+        if (self.display_min is None) != (self.display_max is None):
+            raise ValueError("Use --display-min and --display-max together.")
+        if self.display_min is not None and self.display_max is not None and self.display_max <= self.display_min:
+            raise ValueError("--display-max must be greater than --display-min.")
         self.cli_args = list(cli_args or [])
 
     def build(self) -> Path:
@@ -118,11 +133,40 @@ class SelectedGreenPanelBuilder:
         if not path.exists():
             raise FileNotFoundError(f"Tile does not exist: {path}")
         tile = tiff.imread(path)
-        if tile.ndim != 3 or tile.shape[2] != 3:
-            raise ValueError(f"Expected an RGB TIFF: {path}")
+        if tile.ndim == 2:
+            if self.display_min is None or self.display_max is None:
+                raise ValueError(
+                    f"Raw grayscale TIFF provided without fixed display range: {path}. "
+                    "Use --display-min and --display-max."
+                )
+            tile = self._colorize_raw_green(tile.astype(np.float32, copy=False))
+        elif tile.ndim == 3 and tile.shape[2] == 3:
+            tile = np.asarray(tile, dtype=np.uint8)
+        else:
+            raise ValueError(f"Expected a 2D raw TIFF or RGB TIFF: {path}")
         if self.crop_scale_bar and tile.shape[1] > tile.shape[0]:
             tile = tile[:, : tile.shape[0], :]
         return np.asarray(tile, dtype=np.uint8)
+
+    def _colorize_raw_green(self, data: np.ndarray) -> np.ndarray:
+        data = self._preprocess_raw_green(data)
+        clipped = np.clip(data, self.display_min, self.display_max)
+        norm = (clipped - self.display_min) / (self.display_max - self.display_min)
+        green_u8 = np.round(norm * 255.0).astype(np.uint8)
+        rgb = np.zeros((*green_u8.shape, 3), dtype=np.uint8)
+        rgb[..., 1] = green_u8
+        return rgb
+
+    def _preprocess_raw_green(self, data: np.ndarray) -> np.ndarray:
+        processed = np.array(data, copy=True)
+        if self.background_subtract_sigma > 0:
+            background = gaussian_filter(processed, sigma=self.background_subtract_sigma, mode="nearest")
+            processed = np.clip(processed - background, 0.0, None)
+        if self.median_filter_size >= 3:
+            processed = median_filter(processed, size=self.median_filter_size, mode="nearest")
+        if self.smoothing_sigma > 0:
+            processed = gaussian_filter(processed, sigma=self.smoothing_sigma, mode="nearest")
+        return processed
 
     @staticmethod
     def _tile_label(*, index: int, path: Path) -> str:
@@ -145,6 +189,11 @@ class SelectedGreenPanelBuilder:
             "row1_label": self.row1_label,
             "row2_label": self.row2_label,
             "crop_scale_bar": self.crop_scale_bar,
+            "display_min": self.display_min,
+            "display_max": self.display_max,
+            "background_subtract_sigma": self.background_subtract_sigma,
+            "median_filter_size": self.median_filter_size,
+            "smoothing_sigma": self.smoothing_sigma,
             "row1_paths": [str(path) for path in self.row1_paths],
             "row2_paths": [str(path) for path in self.row2_paths],
         }
@@ -162,6 +211,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--tile-width", type=int, default=300)
     parser.add_argument("--gap", type=int, default=18)
     parser.add_argument("--margin", type=int, default=24)
+    parser.add_argument("--display-min", type=float, default=None)
+    parser.add_argument("--display-max", type=float, default=None)
+    parser.add_argument("--background-subtract-sigma", type=float, default=0.0)
+    parser.add_argument("--median-filter-size", type=int, default=0)
+    parser.add_argument("--smoothing-sigma", type=float, default=0.0)
     return parser.parse_args(argv)
 
 
@@ -178,6 +232,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         tile_width=args.tile_width,
         gap=args.gap,
         margin=args.margin,
+        display_min=args.display_min,
+        display_max=args.display_max,
+        background_subtract_sigma=args.background_subtract_sigma,
+        median_filter_size=args.median_filter_size,
+        smoothing_sigma=args.smoothing_sigma,
         cli_args=(argv if argv is not None else sys.argv[1:]),
     )
     builder.build()
